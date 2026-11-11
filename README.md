@@ -12,8 +12,8 @@ Claudex is an independent community project. It is not an official OpenAI or Ant
 
 ![Claudex local workspace with active agents and project navigation](docs/images/overview-light.png)
 
-Watch real Claude Code delegations: **[launch and collect](docs/videos/launch-and-collect.webm)** and
-**[queue and steer](docs/videos/queue-and-steer.webm)**. [Recordings and transcripts](docs/videos/README.md).
+Watch **[Claude implement CSV export while Codex reviews edge cases](docs/videos/feature-review-live.webm)**.
+[Screen recording details](docs/videos/README.md).
 
 ## What you get
 
@@ -106,23 +106,22 @@ This updates your Claude user settings and preserves a backup. Restart or resume
 Without the hook, agents can still launch; you can pass a `session_summary` for the handoff.
 For Claude on Windows talking to Claudex inside WSL, see the [WSL MCP configuration](docs/setup.md#windows-claude-with-a-wsl-gateway).
 
-## Real CLI walkthroughs
+## From Claude's terminal to the live dashboard
 
-These clips record real Linux Claude Code print-mode runs against a dedicated local Claudex gateway and real Codex workers.
-The terminal display comes from actual public text and tool receipts. Output is paced for reading, idle gaps are shortened,
-and tool receipts show selected actual fields. The original transcript is linked beside each clip.
+[**Watch the feature walkthrough**](docs/videos/feature-review-live.webm) (85 seconds, 3.7 MB).
 
-[**Watch Claude launch a Codex worker and collect its result**](docs/videos/launch-and-collect.webm) (49 seconds, 1.2 MB).
-The worker changes a small Python function, adds an assertion, and runs pytest. Claude retrieves its completed result.
+[![Actual Claudex session after steering a queued message into the running reviewer](docs/videos/feature-review-poster.png)](docs/videos/feature-review-live.webm)
 
-[![Animated preview of the real Claude-to-Codex launch and result recording](docs/videos/launch-and-collect.gif)](docs/videos/launch-and-collect.webm)
+A short prompt asks Claude to add CSV export to an expense tracker and delegate a fresh-eyes review to Codex.
+Claude implements the feature while Codex reviews it. The recording switches from the real interactive Claude terminal to the
+live Claudex conversation for the same agent, queues a follow-up, and steers that queued message into the active turn.
 
-[**Watch queue and steer reach a running worker**](docs/videos/queue-and-steer.webm) (64 seconds, 1.4 MB).
-The receipts show a queued follow-up and a delivered steer bound to the active turn. The current report includes the steering marker;
-the queued follow-up completes in a separate turn. A deliberate 25-second sleep leaves time to demonstrate delivery.
+Codex finds a formula-injection edge case involving a leading line feed. Claude addresses the feedback and finishes with 51 passing tests.
+The closing sequence shows the reviewer result and the working expense tracker with CSV export.
 
-[Both previews, original timed casts, and readable transcripts](docs/videos/README.md) are included. Account banners, credentials,
-and real user conversations are excluded. [Recording instructions](docs/development.md#record-a-real-claude-cli-walkthrough).
+This is a direct screen recording on a private Linux desktop. Only the pointer highlight is added.
+Idle and permission waits are cut, and capture gaps are shortened; the retained footage stays in order.
+Playback duration does not represent the total task time. [Capture and editing details](docs/videos/README.md).
 
 ## See the work
 
