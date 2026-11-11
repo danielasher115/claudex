@@ -1,0 +1,7 @@
+[Unit]
+Description=Forward local HTTP traffic to Claudex
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:8765
+DynamicUser=yes
+NoNewPrivileges=yes

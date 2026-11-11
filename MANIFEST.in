@@ -1,0 +1,7 @@
+include README.md LICENSE THIRD_PARTY_NOTICES.txt SECURITY.md CONTRIBUTING.md CHANGELOG.md
+include ui/package.json ui/package-lock.json ui/index.html ui/tsconfig.json ui/vite.config.ts
+recursive-include ui/src *.ts *.tsx *.css
+recursive-include ui/public *.svg
+recursive-include docs *.md *.png
+recursive-include scripts *.py
+recursive-include tests *.py

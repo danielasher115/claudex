@@ -1,0 +1,10 @@
+[Unit]
+Description=Claudex loopback HTTP address
+
+[Socket]
+ListenStream=127.0.0.1:80
+ListenStream=[::1]:80
+BindIPv6Only=ipv6-only
+
+[Install]
+WantedBy=sockets.target
