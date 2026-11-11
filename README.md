@@ -10,10 +10,12 @@ steer a running agent, and keep the caller's instructions and context visible in
 
 Claudex is an independent community project. It is not an official OpenAI or Anthropic product.
 
-![Claudex local workspace with active agents and project navigation](docs/images/overview-light.png)
+![Claude delegates a review to Codex, then queues and steers a follow-up in the live dashboard](docs/videos/feature-review.gif)
 
-Watch **[Claude implement CSV export while Codex reviews edge cases](docs/videos/feature-review-live.webm)**.
-[Screen recording details](docs/videos/README.md).
+Claude implements CSV export while Codex reviews edge cases. This 28-second excerpt pauses on the Codex launch and task receipt
+before switching to the live dashboard.
+[Longer feature walkthrough](https://github.com/danielasher115/claudex/releases/download/v0.1.0-alpha.1/feature-review-live.webm)
+(hosted as a release download, outside Git history). [Capture details](docs/videos/README.md).
 
 ## What you get
 
@@ -106,39 +108,18 @@ This updates your Claude user settings and preserves a backup. Restart or resume
 Without the hook, agents can still launch; you can pass a `session_summary` for the handoff.
 For Claude on Windows talking to Claudex inside WSL, see the [WSL MCP configuration](docs/setup.md#windows-claude-with-a-wsl-gateway).
 
-## From Claude's terminal to the live dashboard
-
-[**Watch the feature walkthrough**](docs/videos/feature-review-live.webm) (85 seconds, 3.7 MB).
-
-[![Actual Claudex session after steering a queued message into the running reviewer](docs/videos/feature-review-poster.png)](docs/videos/feature-review-live.webm)
-
-A short prompt asks Claude to add CSV export to an expense tracker and delegate a fresh-eyes review to Codex.
-Claude implements the feature while Codex reviews it. The recording switches from the real interactive Claude terminal to the
-live Claudex conversation for the same agent, queues a follow-up, and steers that queued message into the active turn.
-
-Codex finds a formula-injection edge case involving a leading line feed. Claude addresses the feedback and finishes with 51 passing tests.
-The closing sequence shows the reviewer result and the working expense tracker with CSV export.
-
-This is a direct screen recording on a private Linux desktop. Only the pointer highlight is added.
-Idle and permission waits are cut, and capture gaps are shortened; the retained footage stays in order.
-Playback duration does not represent the total task time. [Capture and editing details](docs/videos/README.md).
-
 ## See the work
 
-Read the conversation and send a follow-up while the agent works:
+Follow active agents and browse projects:
 
-![Dark conversation view with the task, agent response, and message composer](docs/images/conversation-dark.png)
+![Claudex overview with active agents and project navigation](docs/images/overview-light.png)
 
-Review the recorded changes in a split diff:
+Review the agent's recorded changes in a split diff:
 
 ![Dark split diff review with changed files and line numbers](docs/images/changes-dark.png)
 
-Inspect the instructions and execution settings behind an agent:
-
-![Light agent context view with inherited context counts and execution settings](docs/images/agent-context-light.png)
-
-All screenshots render the real frontend with fictional, local demo fixtures. No real conversations or account data are included.
-[Regenerate the screenshots](docs/development.md#demo-screenshots) without starting Codex or making model requests.
+These two screenshots render the real frontend with fictional local data.
+[Regenerate them](docs/development.md#demo-screenshots) without starting Codex or making model requests.
 
 ## Use it from the CLI
 

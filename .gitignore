@@ -16,3 +16,9 @@ ui/node_modules
 *.key
 .DS_Store
 Thumbs.db
+
+# Full demo recordings belong in release assets.
+/docs/videos/*.webm
+/docs/videos/*.mp4
+/docs/videos/*.mov
+/docs/videos/*.cast

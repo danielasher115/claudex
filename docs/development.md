@@ -65,9 +65,8 @@ For an existing compatible Chromium installation:
 python scripts/demo.py --browser /absolute/path/to/chromium
 ```
 
-The six PNGs in `docs/images/` show the overview in light and dark themes, a conversation, split diffs, agent settings,
-and inherited context. All displayed paths and messages come from `scripts/demo.py`; never substitute real user history.
-Review every generated image before publishing it.
+The two PNGs in `docs/images/` show the light overview and dark split diff. All displayed paths and messages come from `scripts/demo.py`; never substitute real user history.
+Review both generated images before publishing them. Keep full video recordings outside Git; use release assets for downloads.
 
 
 ## Headless subprocess tests
