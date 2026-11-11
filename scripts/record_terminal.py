@@ -147,6 +147,27 @@ def load_cast(path):
     return [(event[0], event[2]) for line in lines[1:] if (event := json.loads(line))[1] == "o"]
 
 
+def video_receipt(value):
+    """Show selected real receipt fields while preserving the original cast and transcript."""
+    marker = "\nTool result:\n"
+    if not value.startswith(marker):
+        return value
+    payload = value[len(marker):].strip()
+    try:
+        receipt = json.loads(payload)
+    except ValueError:
+        fields = dict(re.findall(r'"(name|uri)":\s*("(?:[^"\\]|\\.)*")', payload))
+        return "\nTool receipt (selected fields):\n" + readable({key: json.loads(text) for key, text in fields.items()}) + "\n" if fields else value
+    if not isinstance(receipt, dict):
+        return value
+    keys = ("status", "thread_id", "turn_id", "message_id", "mode", "name", "model", "effort", "report", "commands", "changed_files", "error", "uri")
+    selected = {key: receipt[key] for key in keys if key in receipt and receipt[key] is not None}
+    if "changed_files" in selected:
+        selected["changed_files"] = [{key: item[key] for key in ("path", "kind") if key in item} for item in selected["changed_files"]]
+    formatted = "{\n" + ",\n".join(f"  {json.dumps(key)}: {json.dumps(item, ensure_ascii=False)}" for key, item in selected.items()) + "\n}"
+    return "\nTool receipt (selected fields):\n" + formatted + "\n"
+
+
 def render(events, args, prefix):
     ffmpeg = args.ffmpeg or shutil.which("ffmpeg")
     if not ffmpeg:
@@ -154,9 +175,11 @@ def render(events, args, prefix):
     font_path = args.font or "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
     font = ImageFont.truetype(font_path, 17)
     heading = ImageFont.truetype(font_path, 19)
+    caption_font = ImageFont.truetype(font_path, 13)
     timeline, current = [], 0.0
     previous = 0.0
     for at, value in events:
+        value = video_receipt(value)
         current += min(max(0, at - previous) / args.speed, args.idle_limit)
         wrapped = []
         for line in value.splitlines():
@@ -188,10 +211,12 @@ def render(events, args, prefix):
                 draw.ellipse((x - 6, 34, x + 6, 46), fill=color)
             draw.text((128, 28), args.title, font=heading, fill="#e6edf3")
             for index, line in enumerate(lines[-ROWS:]):
-                color = "#77dca3" if line.startswith(("Tool:", "Tool result:", "Claude completed")) else "#b7c7dd" if line.startswith("Claude:") else "#e6edf3"
+                color = "#77dca3" if line.startswith(("Tool:", "Tool receipt", "Claude completed")) else "#b7c7dd" if line.startswith("Claude:") else "#e6edf3"
                 draw.text((37, 82 + index * 21), line, font=font, fill=color)
             note = f"Recorded CLI output | {args.speed:g}x, paced for reading | idle gaps limited to {args.idle_limit:g}s"
-            draw.text((37, HEIGHT - 49), note, font=font, fill="#93a7bf")
+            draw.text((37, HEIGHT - 55), note, font=font, fill="#93a7bf")
+            draw.text((37, HEIGHT - 32), "Tool receipts summarized; original transcript linked in the documentation.",
+                      font=caption_font, fill="#93a7bf")
             buffer = io.BytesIO()
             frame.save(buffer, format="JPEG", quality=87)
             encoder.stdin.write(buffer.getvalue())

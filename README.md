@@ -110,14 +110,14 @@ For Claude on Windows talking to Claudex inside WSL, see the [WSL MCP configurat
 
 These clips record real Linux Claude Code print-mode runs against a dedicated local Claudex gateway and real Codex workers.
 The terminal display comes from actual public text and tool receipts. Output is paced for reading, idle gaps are shortened,
-and long tool output is explicitly marked when abbreviated.
+and tool receipts show selected actual fields. The original transcript is linked beside each clip.
 
-[**Watch Claude launch a Codex worker and collect its result**](docs/videos/launch-and-collect.webm) (70 seconds, 1.8 MB).
+[**Watch Claude launch a Codex worker and collect its result**](docs/videos/launch-and-collect.webm) (49 seconds, 1.2 MB).
 The worker changes a small Python function, adds an assertion, and runs pytest. Claude retrieves its completed result.
 
 [![Animated preview of the real Claude-to-Codex launch and result recording](docs/videos/launch-and-collect.gif)](docs/videos/launch-and-collect.webm)
 
-[**Watch queue and steer reach a running worker**](docs/videos/queue-and-steer.webm) (91 seconds, 2.2 MB).
+[**Watch queue and steer reach a running worker**](docs/videos/queue-and-steer.webm) (64 seconds, 1.4 MB).
 The receipts show a queued follow-up and a delivered steer bound to the active turn. The current report includes the steering marker;
 the queued follow-up completes in a separate turn. A deliberate 25-second sleep leaves time to demonstrate delivery.
 
