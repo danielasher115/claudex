@@ -14,7 +14,8 @@ The current alpha is the supported release line; fixes are applied to `main`.
 
 The gateway binds to loopback and rejects unrecognized Host headers. Browser mutations require the same origin; MCP/CLI protocol
 mutations require the gateway's local token. This is not a multi-user service and must not be exposed directly to the internet or a LAN.
-Other programs running as your OS user are within the local trust boundary. Browser data and saved context can contain sensitive project text.
+All local processes that can reach the loopback listener must be trusted. Origin checks are browser defenses, not OS-user authentication.
+Use a private single-user workstation; browser data and saved context can contain sensitive project text.
 
 For native Codex WebSockets, use a loopback endpoint and a capability token when supported by your Codex version.
 Pass the token file with `--codex-token-file`; do not put a bearer token in a URL or repository configuration.
@@ -28,6 +29,9 @@ A project setting cannot select an arbitrary home directory as its memory store.
 Saved memories and conversation text are intentionally inherited when enabled. Redaction and filename checks do not guarantee that
 arbitrary prose is free of secrets. Review context sources and attachments before delegating sensitive work; use `inherit_context=false`
 for an isolated task. Do not grant untrusted agents a broader Codex sandbox than their work requires.
+
+On POSIX systems, application state directories use mode `0700` and local tokens use `0600`. Windows state inherits the user-profile's
+ACLs. If you choose a custom directory, restrict its ACLs to your account.
 
 ## Development and release
 

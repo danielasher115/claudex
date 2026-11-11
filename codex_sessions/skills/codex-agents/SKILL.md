@@ -6,7 +6,7 @@ description: Use when delegating local coding, review, research or document work
 # Codex agents
 
 Launch and control local Codex workers through the connected Claudex MCP. The gateway owns durable threads and message
-receipts; the parent may continue working while delegated tasks run. The installed dashboard opens at http://codex.localhost.
+receipts; the parent may continue working while delegated tasks run. Use the dashboard URL returned by the gateway; the default local address is http://codex.localhost:8765.
 
 ## Start work
 

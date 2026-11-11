@@ -75,3 +75,35 @@ Review every generated image before publishing it.
 Native Windows tests suppress console creation for every test subprocess and reject requests for a new console window.
 The Windows-only regression checks that a spawned Python child has no console-window handle. Noninteractive application
 commands also use the shared platform policy. Test runners must not launch user-visible terminals.
+
+## Record a real Claude CLI walkthrough
+
+`scripts/record_terminal.py` records a Linux subprocess through a PTY. For Claude Code print mode, `--stream-json` displays actual
+public text, tool inputs, tool results, and completion events. It omits private reasoning and explicitly abbreviates long tool output. The `.cast` retains capture timestamps;
+the video paces output for readability and shortens idle gaps, as its footer states. The `.txt` contains the displayed transcript.
+This recorder does not open a Windows terminal or control the desktop.
+
+Use an isolated demo project and a Claude MCP configuration containing only your demo Claudex gateway. Save the exact task in a prompt
+file, then run the real command through the recorder. Running this command uses your Claude and Codex accounts and may incur model usage:
+
+```bash
+python scripts/record_terminal.py \
+  --output docs/videos/launch-and-collect \
+  --title "Claude Code launches a Codex agent" \
+  --stream-json --prompt-file /absolute/path/to/demo-prompt.txt --gif \
+  -- claude --print --output-format stream-json --verbose \
+  --strict-mcp-config --mcp-config /absolute/path/to/demo-mcp.json
+```
+
+Pillow is a normal package dependency. Video rendering needs `ffmpeg` with an MJPEG decoder, the `libvpx` encoder, and the WebM muxer.
+Pass `--ffmpeg /absolute/path/to/ffmpeg` if it is outside PATH. Playwright's bundled Linux ffmpeg supports this output format.
+Pass `--font /absolute/path/to/monospace.ttf` when DejaVu Sans Mono is unavailable. `--gif` also creates a silent GIF preview.
+
+Review the transcript and video before publishing. Prompts and tool receipts can include local paths and user data. Use `--raw-log`
+only with a private destination outside the repository when you need the original unformatted stream for verification.
+To adjust pacing without making more model requests, render the existing cast:
+
+```bash
+python scripts/record_terminal.py --output /absolute/path/to/reviewed-clip \
+  --render-only /absolute/path/to/recording.cast --speed 1.5 --idle-limit 3 --gif
+```

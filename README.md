@@ -2,12 +2,18 @@
 
 **Codex agents for Claude Code.**
 
+[![CI](https://github.com/danielasher115/claudex/actions/workflows/ci.yml/badge.svg)](https://github.com/danielasher115/claudex/actions/workflows/ci.yml)
+[MIT license](LICENSE)
+
 Give Claude Code a crew of Codex agents, then follow their work in a local dashboard. Read conversations, inspect changes,
 steer a running agent, and keep the caller's instructions and context visible in one place.
 
 Claudex is an independent community project. It is not an official OpenAI or Anthropic product.
 
 ![Claudex local workspace with active agents and project navigation](docs/images/overview-light.png)
+
+Watch real Claude Code delegations: **[launch and collect](docs/videos/launch-and-collect.webm)** and
+**[queue and steer](docs/videos/queue-and-steer.webm)**. [Recordings and transcripts](docs/videos/README.md).
 
 ## What you get
 
@@ -69,7 +75,7 @@ claudex start --socket /tmp/claudex-codex.sock
 Open **[codex.localhost:8765](http://codex.localhost:8765)**. The public local address stays stable while the backend selects a free port.
 `claudex status` prints the current address and connection details. Stop the gateway with `claudex stop`.
 
-Linux has been exercised locally. Native Windows and WSL setup paths are provided; macOS is untested.
+Linux/WSL and native Windows are validated by the test suite, with Python 3.11 and 3.13 checked in CI. macOS is untested.
 See [setup and troubleshooting](docs/setup.md) for platform details, custom ports, and data locations.
 
 ### Connect Claude Code
@@ -99,6 +105,24 @@ claudex install-claude-context
 This updates your Claude user settings and preserves a backup. Restart or resume Claude Code and reconnect its Codex MCP server.
 Without the hook, agents can still launch; you can pass a `session_summary` for the handoff.
 For Claude on Windows talking to Claudex inside WSL, see the [WSL MCP configuration](docs/setup.md#windows-claude-with-a-wsl-gateway).
+
+## Real CLI walkthroughs
+
+These clips record real Linux Claude Code print-mode runs against a dedicated local Claudex gateway and real Codex workers.
+The terminal display comes from actual public text and tool receipts. Output is paced for reading, idle gaps are shortened,
+and long tool output is explicitly marked when abbreviated.
+
+[**Watch Claude launch a Codex worker and collect its result**](docs/videos/launch-and-collect.webm) (70 seconds, 1.8 MB).
+The worker changes a small Python function, adds an assertion, and runs pytest. Claude retrieves its completed result.
+
+[![Animated preview of the real Claude-to-Codex launch and result recording](docs/videos/launch-and-collect.gif)](docs/videos/launch-and-collect.webm)
+
+[**Watch queue and steer reach a running worker**](docs/videos/queue-and-steer.webm) (91 seconds, 2.2 MB).
+The receipts show a queued follow-up and a delivered steer bound to the active turn. The current report includes the steering marker;
+the queued follow-up completes in a separate turn. A deliberate 25-second sleep leaves time to demonstrate delivery.
+
+[Both previews, original timed casts, and readable transcripts](docs/videos/README.md) are included. Account banners, credentials,
+and real user conversations are excluded. [Recording instructions](docs/development.md#record-a-real-claude-cli-walkthrough).
 
 ## See the work
 
