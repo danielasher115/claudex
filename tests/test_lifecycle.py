@@ -192,7 +192,7 @@ def test_alias_attaches_to_running_server_streams_events_and_stops_with_it(tmp_p
     while time.monotonic() < deadline:
         try:
             httpx.get(f"http://127.0.0.1:{address_port}", timeout=.2, trust_env=False)
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.ConnectTimeout):
             break
         time.sleep(.1)
     else:

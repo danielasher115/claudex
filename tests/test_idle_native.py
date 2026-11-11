@@ -150,10 +150,7 @@ args = {json.dumps([str(sentinel), str(sentinel_log)])}
                 await instance.start_queued(queued)
                 delivered = instance.db.execute("SELECT * FROM messages WHERE id=?", (sent["message_id"],)).fetchone()
                 assert delivered["status"] == "delivered", dict(delivered)
-                second_turn = await eventually(lambda: completed(delivered["turn_id"]))
-                assert second_turn["status"] == "completed", second_turn
-                assert any(item.get("text") == "Local response 2" for item in second_turn["items"])
-                assert len(server.requests) == 2
+                await eventually(lambda: len(sentinel_log.read_text().splitlines()) == 2)
                 pids = [json.loads(line) for line in sentinel_log.read_text().splitlines()]
                 assert len(pids) == 2
                 assert pids[1]["ppid"] == daemon.pid
@@ -161,6 +158,16 @@ args = {json.dumps([str(sentinel), str(sentinel_log)])}
                 assert process_alive(pids[1]["pid"])
                 await eventually(unloaded, timeout=5)
                 await eventually(lambda: not process_alive(pids[1]["pid"]), timeout=5)
+
+                async def persisted_result():
+                    result = await instance.protocol.result(thread_id, delivered["turn_id"])
+                    return result if result["status"] not in ("starting", "running") else None
+
+                second_result = await eventually(persisted_result)
+                assert second_result["turn_id"] == delivered["turn_id"], second_result
+                assert second_result["status"] == "completed", second_result
+                assert second_result["report"] == "Local response 2", second_result
+                assert len(server.requests) == 2
             except BaseException:
                 print(log_path.read_text())
                 print(json.dumps(notifications[-12:], indent=2))

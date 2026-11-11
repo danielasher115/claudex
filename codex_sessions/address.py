@@ -124,7 +124,7 @@ def start_route(args):
         if process.poll() is None:
             process.terminate()
             process.wait(timeout=5)
-        raise RuntimeError(f"Local address failed; choose another port with --address-port. Check {log}\n{log.read_text(encoding="utf-8")[-2000:]}")
+        raise RuntimeError(f"Local address failed; choose another port with --address-port. Check {log}\n{log.read_text(encoding='utf-8')[-2000:]}")
 
 
 async def serve_route(data_dir, port, address_port, backend_pid, backend_identity):
