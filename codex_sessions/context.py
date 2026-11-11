@@ -3,10 +3,12 @@ import json
 import re
 import os
 import subprocess
+import stat
+import sys
 from pathlib import Path
 
 from .inheritance import validate_conversation
-from .platform import quiet_process_options
+from .platform import local_path, quiet_process_options
 
 PORTABLE = {"model", "effortLevel", "language", "outputStyle", "permissions", "enabledPlugins"}
 
@@ -69,22 +71,29 @@ def _repository_root(cwd):
 
 
 def _markdown_files(root, warnings, allowed):
-    visited = set()
-    def unreadable(error):
-        warnings.append(f"Could not inspect context directory {error.filename}")
-    for directory, children, filenames in os.walk(root, followlinks=True, onerror=unreadable):
-        if not allowed(Path(directory)):
-            children[:] = []
+    visited, pending = set(), [root]
+    while pending:
+        directory = pending.pop()
+        if not allowed(directory):
             continue
-        resolved = Path(directory).resolve()
+        resolved = directory.resolve()
         if resolved in visited:
-            children[:] = []
             continue
         visited.add(resolved)
-        children[:] = sorted(name for name in children if allowed(Path(directory) / name))
-        for name in sorted(filenames):
-            if name.endswith(".md"):
-                yield Path(directory) / name
+        try:
+            children = sorted(directory.iterdir())
+        except OSError:
+            warnings.append(f"Could not inspect context directory {directory}")
+            continue
+        directories = []
+        for path in children:
+            if not allowed(path):
+                continue
+            if path.is_dir():
+                directories.append(path)
+            elif path.name.endswith(".md"):
+                yield path
+        pending.extend(reversed(directories))
 
 
 def merge_settings(base, extra):
@@ -112,9 +121,9 @@ def merge_settings(base, extra):
 
 def capture(cwd, home=None, codex_home=None, claude_home=None):
     explicit_home = home is not None
-    cwd, home = Path(cwd).resolve(), Path(home or Path.home()).resolve()
-    codex_root = Path(codex_home or (home / ".codex" if explicit_home else os.environ.get("CODEX_HOME", home / ".codex"))).expanduser().resolve()
-    claude_root = Path(claude_home or (home / ".claude" if explicit_home else os.environ.get("CLAUDE_CONFIG_DIR", home / ".claude"))).expanduser().resolve()
+    cwd, home = local_path(cwd).resolve(), local_path(home or Path.home()).resolve()
+    codex_root = local_path(codex_home or (home / ".codex" if explicit_home else os.environ.get("CODEX_HOME", home / ".codex"))).resolve()
+    claude_root = local_path(claude_home or (home / ".claude" if explicit_home else os.environ.get("CLAUDE_CONFIG_DIR", home / ".claude"))).resolve()
     project_root = _working_tree_root(cwd)
     result = {"provider": "local", "cwd": str(cwd), "instructions": [], "memories": [], "skills": [], "settings": {}, "unsupported_settings": [], "warnings": [], "settings_sources": [], "memory_roots": []}
     private_configs = {claude_root / name for name in ("settings.json", "settings.local.json", ".credentials.json")}
@@ -134,8 +143,42 @@ def capture(cwd, home=None, codex_home=None, claude_home=None):
     import_scopes = [project_root, *user_scopes]
     seen, emitted = set(), set()
 
+    def preflight(path, base=None, roots=None, exact=()):
+        try:
+            path = local_path(path)
+            if base is not None and not path.is_absolute():
+                path = base / path
+            path = Path(os.path.abspath(path))
+        except ValueError as exc:
+            result["warnings"].append(f"Skipped context path {path}: {exc}")
+            return None
+        if roots is not None and not any(path.is_relative_to(root) for root in roots) and path not in exact:
+            result["warnings"].append(f"Skipped context path outside allowed context roots: {path}")
+            return None
+        if sys.platform == "win32":
+            anchors = [root for root in (project_root, home, codex_root, claude_root, *chain) if path.is_relative_to(root)]
+            if anchors:
+                anchor = max(anchors, key=lambda root: len(root.parts))
+                current = anchor
+                for part in (None, *path.relative_to(anchor).parts):
+                    if part is not None:
+                        current /= part
+                    try:
+                        attributes = getattr(current.lstat(), "st_file_attributes", 0)
+                    except FileNotFoundError:
+                        break
+                    except OSError:
+                        result["warnings"].append(f"Could not inspect context path {current}")
+                        return None
+                    if attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+                        result["warnings"].append(f"Skipped Windows context reparse point {current}")
+                        return None
+        return path
+
     def allowed(path, roots=(), exact=(), settings=False):
-        path = Path(os.path.abspath(path))
+        path = preflight(path, roots=roots, exact=exact)
+        if path is None:
+            return False
         try:
             resolved = path.resolve()
         except (OSError, RuntimeError):
@@ -164,14 +207,16 @@ def capture(cwd, home=None, codex_home=None, claude_home=None):
         return text
 
     def add(path, field, condition=None, stack=(), imported_from=None, trusted=False, roots=None):
-        path = Path(os.path.abspath(path))
         roots = import_scopes if roots is None else roots
-        if not path.exists() and not path.is_symlink():
-            if imported_from:
-                result["warnings"].append(f"Could not read context import {path} from {imported_from}")
+        path = preflight(path, roots=roots if imported_from else None)
+        if path is None:
             return
         exact = (path,) if not imported_from else ()
         if not allowed(path, roots, exact):
+            return
+        if not path.exists() and not path.is_symlink():
+            if imported_from:
+                result["warnings"].append(f"Could not read context import {path} from {imported_from}")
             return
         resolved = path.resolve()
         trusted = (trusted and not resolved.is_relative_to(project_root) and resolved not in ancestor_files
@@ -201,18 +246,19 @@ def capture(cwd, home=None, codex_home=None, claude_home=None):
         if field == "instructions":
             result["provider"] = "claude"
             for value in _imports(text):
-                imported = home / value[2:] if value.startswith("~/") else Path(value)
-                if not imported.is_absolute():
-                    imported = path.parent / imported
-                imported = Path(os.path.abspath(imported))
+                child_roots = None if trusted else [*import_scopes, *(root for root in roots if root in ancestor_rules)]
+                imported = preflight(home / value[2:] if value.startswith("~/") else value, base=path.parent, roots=child_roots)
+                if imported is None:
+                    continue
                 if "/" not in value and "." not in value and not imported.is_file():
                     continue
-                child_roots = ([*import_scopes, *roots, imported.parent] if trusted else
-                               [*import_scopes, *(root for root in roots if root in ancestor_rules)])
+                if trusted:
+                    child_roots = [*import_scopes, *roots, imported.parent]
                 add(imported, field, condition, (*stack, resolved), resolved, trusted, child_roots)
 
     def add_rules(root, base, trusted=False):
-        if not root.is_dir():
+        root = preflight(root)
+        if root is None or not root.is_dir():
             return
         scopes = [root]
         # A selected rules directory is a scope, never a grant to its symlink target.
@@ -254,7 +300,8 @@ def capture(cwd, home=None, codex_home=None, claude_home=None):
     memory_roots = [claude_root / "projects" / slug / "memory" for slug in slugs]
     memory_scopes = [project_root, *memory_roots, codex_root / "memories"]
     for path in dict.fromkeys(setting_files):
-        if not path.is_file():
+        path = preflight(path)
+        if path is None or not path.is_file():
             continue
         text = read(path, exact=(path,), settings=True)
         if text is None:
@@ -266,16 +313,21 @@ def capture(cwd, home=None, codex_home=None, claude_home=None):
             result["settings"] = merge_settings(result["settings"], {key: value for key, value in settings.items() if key in PORTABLE})
             if "autoMemoryDirectory" in settings:
                 value = settings["autoMemoryDirectory"]
-                if not isinstance(value, str) or not (Path(value).is_absolute() or value.startswith("~/")):
+                if not isinstance(value, str):
                     raise ValueError("autoMemoryDirectory must be an absolute path or start with ~/")
-                memory = Path(os.path.abspath(home / value[2:] if value.startswith("~/") else value))
-                scopes = [memory] if path in user_settings else memory_scopes
-                if allowed(memory, scopes):
-                    memory_roots = [memory]
-                    if path in user_settings:
-                        memory_scopes.append(memory)
-                else:
+                memory = preflight(home / value[2:] if value.startswith("~/") else value, roots=None if path in user_settings else memory_scopes)
+                if memory is None:
                     result["warnings"].append(f"Skipped unsafe autoMemoryDirectory in {path}")
+                elif not (Path(value).is_absolute() or value.startswith("~/")):
+                    raise ValueError("autoMemoryDirectory must be an absolute path or start with ~/")
+                else:
+                    scopes = [memory] if path in user_settings else memory_scopes
+                    if allowed(memory, scopes):
+                        memory_roots = [memory]
+                        if path in user_settings:
+                            memory_scopes.append(memory)
+                    else:
+                        result["warnings"].append(f"Skipped unsafe autoMemoryDirectory in {path}")
             result["unsupported_settings"].extend(key for key in settings if key not in PORTABLE and key != "autoMemoryDirectory")
             result["settings_sources"].append(str(path.resolve()))
             result["provider"] = "claude"
@@ -284,12 +336,13 @@ def capture(cwd, home=None, codex_home=None, claude_home=None):
     if result["settings"].get("permissions"):
         result["warnings"].append("Inherited Claude permission rules are context only; Codex cannot enforce Claude tool permission syntax.")
     for memory in [*memory_roots, codex_root / "memories"]:
-        if memory.is_dir() and allowed(memory, memory_scopes):
+        memory = preflight(memory)
+        if memory is not None and memory.is_dir() and allowed(memory, memory_scopes):
             result["memory_roots"].append(str(memory.resolve()))
             for path in _markdown_files(memory, result["warnings"], lambda path: allowed(path, [memory])):
                 add(path, "memories", roots=[memory])
-    manifest = claude_root / "plugins/installed_plugins.json"
-    if manifest.is_file():
+    manifest = preflight(claude_root / "plugins/installed_plugins.json")
+    if manifest is not None and manifest.is_file():
         text = read(manifest, roots=[claude_root / "plugins"])
         try:
             installed = json.loads(text).get("plugins", {}) if text is not None else {}
@@ -298,16 +351,24 @@ def capture(cwd, home=None, codex_home=None, claude_home=None):
                 if enabled.get(name) and versions:
                     path = versions[-1].get("installPath")
                     if path:
-                        root = Path(os.path.abspath(Path(path).expanduser())) / "skills"
-                        skill_roots.append((root, [root]))
+                        root = preflight(path)
+                        if root is not None:
+                            root /= "skills"
+                            skill_roots.append((root, [root]))
         except (OSError, ValueError, TypeError):
             result["warnings"].append("The enabled-plugin skill inventory could not be read")
     skill_paths = set()
     for root, scopes in skill_roots:
-        if not root.is_dir() or not allowed(root, scopes):
+        root = preflight(root)
+        if root is None or not root.is_dir() or not allowed(root, scopes):
             continue
-        for path in [*root.glob("*/SKILL.md"), *root.glob("SKILL.md")]:
-            if not allowed(path, scopes):
+        try:
+            children = [path for path in sorted(root.iterdir()) if preflight(path) is not None and path.is_dir()]
+        except OSError:
+            result["warnings"].append(f"Could not inspect context directory {root}")
+            continue
+        for path in [*(child / "SKILL.md" for child in children), root / "SKILL.md"]:
+            if not allowed(path, scopes) or not path.is_file():
                 continue
             resolved = path.resolve()
             if resolved in skill_paths:

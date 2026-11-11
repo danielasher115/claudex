@@ -473,3 +473,89 @@ def test_explicit_home_without_common_drive_uses_working_tree_boundary(tmp_path,
     body = json.dumps(context)
     assert "Selected separate home instruction" in body and "Selected working tree instruction" in body
     assert "UNSELECTED HOST ANCESTOR" not in body
+
+
+
+@pytest.fixture
+def deny_network_path_io(monkeypatch):
+    from pathlib import Path
+    for name in ("resolve", "exists", "is_file", "is_dir", "stat", "lstat", "read_text"):
+        original = getattr(Path, name)
+        def guarded(path, *args, _method=original, **kwargs):
+            normalized = str(path).replace("\\", "/")
+            assert not any(prefix in normalized for prefix in ("//server", "//?/", "//./")), "Network paths must be rejected before filesystem access"
+            return _method(path, *args, **kwargs)
+        monkeypatch.setattr(Path, name, guarded)
+
+
+@pytest.mark.parametrize("value", [r"\\server\share\rules.md", "//server/share/rules.md", r"\\?\UNC\server\share\rules.md", r"\\.\pipe\context"])
+@pytest.mark.parametrize("source", ["project", "user"])
+def test_context_import_rejects_network_paths_before_any_io(tmp_path, value, source, deny_network_path_io):
+    home = tmp_path / "home"; project = tmp_path / "repo"
+    home.mkdir(); project.mkdir()
+    ((project if source == "project" else home) / "CLAUDE.md").write_text("@" + value)
+    context = capture(project, home=home)
+    assert any("network and device paths" in warning for warning in context["warnings"])
+
+
+@pytest.mark.parametrize("value", [r"\\server\share\memory", "//server/share/memory", r"\\?\C:\private\memory"])
+def test_memory_override_rejects_network_paths_before_any_io(tmp_path, value, deny_network_path_io):
+    home = tmp_path / "home"; project = tmp_path / "repo"
+    home.mkdir(); (project / ".claude").mkdir(parents=True)
+    (project / ".claude/settings.json").write_text(json.dumps({"autoMemoryDirectory": value}))
+    context = capture(project, home=home)
+    assert any("network and device paths" in warning for warning in context["warnings"])
+    assert not context["memory_roots"]
+
+
+@pytest.mark.parametrize("kind", ["instructions", "rules", "skills", "settings", "memories"])
+def test_windows_project_reparse_component_is_rejected_before_following(tmp_path, monkeypatch, kind):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from codex_sessions import context as context_module
+    home = tmp_path / "home"; project = tmp_path / "repo"
+    home.mkdir(); (project / ".claude").mkdir(parents=True)
+    targets = {"instructions": "linked", "rules": ".claude/rules", "skills": ".claude/skills/example", "settings": ".claude/settings.json", "memories": "memory"}
+    link = project / targets[kind]
+    if kind == "settings":
+        link.write_text(json.dumps({"model": "REPARSE TARGET CONTENT"}))
+    else:
+        link.mkdir(parents=True)
+        filename = "SKILL.md" if kind == "skills" else "rules.md"
+        (link / filename).write_text("name: example\ndescription: REPARSE TARGET CONTENT")
+    if kind == "instructions":
+        (project / "CLAUDE.md").write_text("@linked/rules.md")
+    if kind == "memories":
+        (project / ".claude/settings.json").write_text(json.dumps({"autoMemoryDirectory": str(link)}))
+    monkeypatch.setattr(context_module, "sys", SimpleNamespace(platform="win32"), raising=False)
+    original_lstat = Path.lstat
+    monkeypatch.setattr(Path, "lstat", lambda path, *args, **kwargs: SimpleNamespace(st_file_attributes=0x400) if path == link else original_lstat(path, *args, **kwargs))
+    for name in ("resolve", "exists", "is_file", "is_dir", "stat", "read_text"):
+        original = getattr(Path, name)
+        def guarded(path, *args, _method=original, **kwargs):
+            assert not path.is_relative_to(link), "Reparse components must be rejected before following them"
+            return _method(path, *args, **kwargs)
+        monkeypatch.setattr(Path, name, guarded)
+    context = capture(project, home=home)
+    assert "REPARSE TARGET CONTENT" not in json.dumps(context)
+    assert any("reparse point" in warning for warning in context["warnings"])
+
+
+
+@pytest.mark.parametrize("kind", ["instructions", "memories"])
+def test_untrusted_external_context_paths_are_rejected_before_metadata(tmp_path, monkeypatch, kind):
+    from pathlib import Path
+    home = tmp_path / "home"; project = tmp_path / "repo"; external = tmp_path / "outside" / "target"
+    home.mkdir(); (project / ".claude").mkdir(parents=True)
+    if kind == "instructions":
+        (project / "CLAUDE.md").write_text("@" + str(external))
+    else:
+        (project / ".claude/settings.json").write_text(json.dumps({"autoMemoryDirectory": str(external)}))
+    for name in ("resolve", "exists", "is_file", "is_dir", "stat", "lstat", "read_text"):
+        original = getattr(Path, name)
+        def guarded(path, *args, _method=original, **kwargs):
+            assert path != external, "External project context must be rejected before filesystem access"
+            return _method(path, *args, **kwargs)
+        monkeypatch.setattr(Path, name, guarded)
+    context = capture(project, home=home)
+    assert any("outside allowed context roots" in warning for warning in context["warnings"])

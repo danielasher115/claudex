@@ -22,7 +22,7 @@ Pass the token file with `--codex-token-file`; do not put a bearer token in a UR
 The gateway does not approve native permission prompts on your behalf.
 
 Context capture rejects private credential locations and recognizable private-key content. Project imports are confined to their
-working tree and curated context scopes. Symlinks do not grant access outside the selected scope. Trusted user instructions may
+working tree and curated context scopes. Symlinks do not grant access outside the selected scope. Automatic context traversal skips Windows reparse points before following their targets. Trusted user instructions may
 explicitly reference external nonprivate documents, but entering project rules discards that external trust.
 A project setting cannot select an arbitrary home directory as its memory store. Rejections produce notices without disclosing file contents.
 

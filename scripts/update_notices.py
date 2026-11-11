@@ -17,7 +17,11 @@ def main():
             packages[(name, item['version'])] = item
             visit(item)
     visit(json.loads(result.stdout))
-    sections = ['Claudex third-party notices\n\nThe built dashboard includes software from these runtime JavaScript dependencies.\n'
+    for name in ('tailwindcss', '@tailwindcss/typography'):
+        folder = ROOT / 'ui' / 'node_modules' / name
+        manifest = json.loads((folder / 'package.json').read_text(encoding='utf-8'))
+        packages[(name, manifest['version'])] = {'path': str(folder)}
+    sections = ['Claudex third-party notices\n\nThe built dashboard includes software from these JavaScript dependencies and stylesheet generators.\n'
                 'Python dependencies are installed separately and retain the notices in their own distributions.\n']
     missing = []
     for name, version in sorted(packages):
@@ -33,7 +37,7 @@ def main():
     if missing:
         raise SystemExit('Missing license texts: ' + ', '.join(missing))
     (ROOT / 'THIRD_PARTY_NOTICES.txt').write_text('\n'.join(sections), encoding='utf-8')
-    print(f'Wrote notices for {len(packages)} runtime dependencies.')
+    print(f'Wrote notices for {len(packages)} bundled dependencies.')
 
 
 if __name__ == '__main__':
