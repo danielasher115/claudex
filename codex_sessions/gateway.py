@@ -127,7 +127,7 @@ class Gateway:
         live = {}
         online = False
         try:
-            if time.monotonic() - self.discovery_at > 60:
+            if not self.discovery_at or time.monotonic() - self.discovery_at > 60:
                 discovered = dict(rows)
                 cursor = None
                 while True:

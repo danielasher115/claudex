@@ -216,3 +216,22 @@ def test_ui_pages_use_bounded_item_history_and_protocol_pages_keep_full_turns(tm
         assert (await instance.page("a", "items:older-items"))["items"][-1]["text"] == "older"
         assert (await instance.page("a"))["items"][-1]["text"] == "Complete protocol history"
     asyncio.run(check())
+
+
+def test_initial_discovery_runs_even_when_the_host_has_just_booted(tmp_path, monkeypatch):
+    import time as real_time
+    from types import SimpleNamespace
+    from codex_sessions import gateway
+    monkeypatch.setattr(gateway, 'time', SimpleNamespace(monotonic=lambda: 5.0, time=real_time.time))
+    async def check():
+        instance = service(tmp_path)
+        original = instance.rpc.call
+        calls = []
+        async def call(method, params=None):
+            calls.append(method)
+            return await original(method, params)
+        instance.rpc.call = call
+        await instance.sessions()
+        await instance.sessions(fresh=True)
+        assert calls.count('thread/list') == 1
+    asyncio.run(check())
