@@ -197,7 +197,8 @@ def test_capture_blocks_rule_symlink_escape(tmp_path, symlink):
     symlink(shared / "cycle", home / ".claude/rules", directory=True)
     context = capture(project, home=home)
     assert "Shared rule" not in render(context) and "Bare filename import" not in render(context)
-    assert any("outside allowed context" in warning for warning in context["warnings"])
+    reason = "reparse point" if sys.platform == "win32" else "outside allowed context"
+    assert any(reason in warning and "shared" in warning for warning in context["warnings"])
 
 
 def test_capture_keeps_conditional_imports_scoped_and_notices_visible_to_agent(tmp_path):
