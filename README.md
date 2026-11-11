@@ -1,3 +1,5 @@
+<img src="ui/public/assets/favicon.svg" width="56" height="56" alt="Claudex logo" />
+
 # Claudex
 
 **Codex agents for Claude Code.**
