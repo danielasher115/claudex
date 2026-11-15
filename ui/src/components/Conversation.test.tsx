@@ -12,6 +12,16 @@ test("collapsed tools do not render large output or raw records", () => {
   expect(screen.getByRole("button", { name: "Copy output" })).toBeTruthy();
 });
 
+test("expanded commands preserve long multiline command and output for reading and copying", () => {
+  const command = `python -c '${"a".repeat(600)}'\nprintf done`;
+  const output = Array.from({ length: 120 }, (_, index) => `output line ${index}`).join("\n");
+  const { container } = render(<ConversationItem item={{ id: "long-command", type: "commandExecution", command, aggregatedOutput: output, status: "completed" }} expanded />);
+  expect(container.querySelector(".tool-command")?.textContent).toBe(`$ ${command}`);
+  expect(container.querySelector(".tool-output")?.textContent).toBe(output);
+  expect(screen.getByRole("button", { name: "Copy command" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Copy output" })).toBeTruthy();
+});
+
 test("file changes expose readable diff lines", () => {
   render(<ConversationItem item={{ id: "file", type: "fileChange", status: "completed", changes: [{ path: "app.py", diff: "@@ -1 +1 @@\n-old line\n+new line\n" }] }} />);
   fireEvent.click(screen.getByRole("button", { name: /Edit files/ }));

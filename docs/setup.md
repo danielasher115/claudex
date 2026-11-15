@@ -206,5 +206,11 @@ Use an absolute executable path when Claude does not inherit your terminal PATH.
 **A saved session cannot receive a message.** Read its connection reason in the dashboard. A conversation owned by another
 process can remain readable without being controllable through this gateway.
 
+**Background shells are unavailable.** The panel uses Codex's `thread/backgroundTerminals/list` for the selected session.
+An unavailable runtime response is shown explicitly; it does not mean there are zero running shells. No host-wide process list is used.
+
+**The context ring is empty.** The runtime has not supplied a recent token snapshot or context-window limit for this session.
+The ring does not substitute cumulative billed tokens. Hover or focus it to inspect the last reported usage when available.
+
 **Attachments fail before launch.** Read the preparation error. PDF support is included through the portable PDFium dependency; unsupported or
 oversized inputs fail explicitly. Details and limits are in the [protocol guide](agent-protocol.md#files-and-attachments).

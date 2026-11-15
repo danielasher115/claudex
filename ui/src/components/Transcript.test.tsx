@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
-import type { Item } from "../api";
+import type { Item, Session } from "../api";
 import { Transcript } from "./Transcript";
 
 afterEach(cleanup);
@@ -24,33 +24,74 @@ test("commentary stays outside collapsed desktop activity and final work time", 
   expect(screen.getByText("All checks passed")).toBeTruthy();
 });
 
-test("desktop activity is collapsed during work and commentary remains visible after the final starts", async () => {
+test("completed command disclosures keep their label while the turn continues", async () => {
   const active = { ...marker, status: "inProgress", completed_at: undefined };
   const { rerender } = render(<Transcript items={[active, user, update, command]} />);
   expect(await screen.findByText("Checking delivery")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Thinking" }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByRole("button", { name: /Terminal/ }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByRole("status").textContent).toBe("Thinking");
   rerender(<Transcript items={[active, user, update, command, final]} />);
   expect(await screen.findByText("Fixed the queue.")).toBeTruthy();
   expect(screen.getByRole("button", { name: /Terminal/ }).getAttribute("aria-expanded")).toBe("false");
   expect(screen.getByText("Checking delivery")).toBeTruthy();
 });
 
-test("ordinary reasoning supplies the inline desktop heading without becoming a tool card", async () => {
+test("public reasoning stays inspectable during work and in completed history", async () => {
   const active = { ...marker, status: "inProgress" };
   const thinking: Item = { id: "r", type: "reasoning", turn_id: "t", summary: ["**Inspecting delivery**\nChecking **ordering** before changing it."], content: [] };
   const { rerender } = render(<Transcript items={[active, user, thinking]} />);
-  expect(screen.getByRole("status").textContent).toBe("Inspecting delivery");
-  expect(screen.queryByText("ordering", { selector: "strong" })).toBeNull();
-  rerender(<Transcript items={[active, user, { ...thinking, summary: [] }]} />);
-  expect(screen.getByRole("status").textContent).toBe("Thinking");
-  rerender(<Transcript items={[marker, user, { ...thinking, summary: [] }, final]} />);
-  expect(screen.queryByText("Thinking")).toBeNull();
-  expect(screen.getByText("Fixed the queue.")).toBeTruthy();
+  const toggle = screen.getByRole("button", { name: "Inspecting delivery" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(await screen.findByText("ordering", { selector: "strong" })).toBeTruthy();
+  rerender(<Transcript items={[marker, user, thinking, final]} />);
+  expect(screen.getByRole("button", { name: "Inspecting delivery" })).toBeTruthy();
+  expect(screen.getByText("ordering", { selector: "strong" })).toBeTruthy();
 });
 
-test("a plain native reasoning summary supplies the current thinking headline", () => {
-  render(<Transcript items={[{ ...marker, status: "inProgress" }, user, { id: "r", type: "reasoning", turn_id: "t", summary: ["Inspecting SDK joins"], content: [] }]} />);
-  expect(screen.getByRole("status").textContent).toBe("Inspecting SDK joins");
+test("empty reasoning provides only an active status and no empty completed panel", async () => {
+  const thinking: Item = { id: "r", type: "reasoning", turn_id: "t", status: "inProgress", summary: [], content: [], encrypted_content: "private bytes" };
+  const { rerender } = render(<Transcript items={[{ ...marker, status: "inProgress" }, user, thinking]} />);
+  expect(screen.getByRole("status").textContent).toBe("Thinking");
+  expect(screen.queryByRole("button", { name: "Thinking" })).toBeNull();
+  rerender(<Transcript items={[marker, user, thinking, final]} />);
+  expect(screen.queryByText("Thinking")).toBeNull();
+  expect(screen.queryByText("private bytes")).toBeNull();
+  expect(await screen.findByText("Fixed the queue.")).toBeTruthy();
+});
+
+test("thinking and tool disclosures preserve transcript order without merging their labels", () => {
+  const thought = (id: string, heading: string): Item => ({ id, type: "reasoning", turn_id: "t", summary: [`**${heading}**\nPublic summary.`] });
+  const { container } = render(<Transcript items={[marker, user, thought("r1", "Inspecting inputs"), command, thought("r2", "Checking results"), { ...command, id: "cmd2" }, final]} />);
+  const ids = [...container.querySelectorAll("[data-item-id]")].map(node => node.getAttribute("data-item-id"));
+  expect(ids).toEqual(["u", "r1", "cmd", "r2", "cmd2", "final"]);
+  expect(screen.getAllByRole("button", { name: /Terminal/ })).toHaveLength(2);
+});
+
+test("native running action types distinguish reading, searching and commands", () => {
+  const active = { ...marker, status: "inProgress" };
+  const running = { ...command, status: "inProgress", commandActions: [{ type: "read", path: "queue.ts" }] };
+  const { rerender } = render(<Transcript items={[active, user, running]} />);
+  expect(screen.getByRole("button", { name: "Reading files" })).toBeTruthy();
+  rerender(<Transcript items={[active, user, { ...running, commandActions: [{ type: "search", query: "queue" }] }]} />);
+  expect(screen.getByRole("button", { name: "Searching files" })).toBeTruthy();
+  rerender(<Transcript items={[active, user, { ...running, commandActions: [] }]} />);
+  expect(screen.getByRole("button", { name: "Running command" })).toBeTruthy();
+});
+
+test("search opens recorded reasoning alongside independently folded commands", async () => {
+  const thinking: Item = { id: "r", type: "reasoning", turn_id: "t", summary: ["**Checking delivery**\nInspecting **ordering**."] };
+  render(<Transcript items={[marker, user, thinking, command, final]} matchedIds={new Set([thinking.id])} />);
+  expect(await screen.findByText("ordering", { selector: "strong" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Terminal/ }).getAttribute("aria-expanded")).toBe("false");
+});
+
+test("an approval request remains visible beside the available reasoning summary", () => {
+  const thinking: Item = { id: "r", type: "reasoning", turn_id: "t", summary: ["**Checking delivery**\nInspecting ordering."] };
+  const session = { id: "s", activity: { turn_id: "t", phase: "waiting_approval", label: "Waiting for approval" } } as Session;
+  render(<Transcript items={[{ ...marker, status: "inProgress" }, user, thinking]} session={session} />);
+  expect(screen.getByRole("status").textContent).toBe("Waiting for approval");
+  expect(screen.getByRole("button", { name: "Checking delivery" })).toBeTruthy();
 });
 
 test("async responses remain standalone and stopped work stays inspectable", async () => {
@@ -80,8 +121,8 @@ test("nested tools open only while running inside an explicitly expanded activit
   const active = { ...marker, status: "inProgress" };
   const { rerender } = render(<Transcript items={[active, user, command]} />);
   expect(screen.queryByText("All checks passed")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Thinking" }));
   rerender(<Transcript items={[active, user, { ...command, status: "inProgress" }]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Running command" }));
   expect(screen.getByText("All checks passed")).toBeTruthy();
   rerender(<Transcript items={[active, user, command]} />);
   expect(screen.queryByText("All checks passed")).toBeNull();

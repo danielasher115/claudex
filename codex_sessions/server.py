@@ -17,11 +17,13 @@ from starlette.staticfiles import StaticFiles
 from .gateway import Gateway
 from .rpc import RpcError
 from .file_links import FileLinkError
+from .context_usage import ContextUsage
 
 
 def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
     service = Gateway(Path(home), socket, Path(data_dir), codex_token_file=codex_token_file)
     service.protocol.port = port
+    context_usage = ContextUsage(service.history, service.details.token_usage)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -78,11 +80,16 @@ def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
             if path.endswith("/details"):
                 return JSONResponse(await service.details.get(session_id, refresh=request.query_params.get("refresh") == "1",
                                                               section=request.query_params.get("section", "all")))
+            if path.endswith("/background-shells"):
+                return JSONResponse(await service.background_shells.get(session_id))
             if path.endswith("/history"):
                 return JSONResponse(await service.page(session_id, request.query_params.get("cursor")))
             if path.endswith("/view"):
                 history = await service.page(session_id, compact=True)
-                return JSONResponse({"session": await service.session(session_id), "history": history, "children": service.protocol.children(session_id)})
+                session = await service.session(session_id)
+                usage = await asyncio.to_thread(context_usage.get, session_id)
+                return JSONResponse({"session": session, "history": history, "children": service.protocol.children(session_id),
+                                     "context_usage": usage})
             return JSONResponse(await service.session(session_id))
         except FileLinkError as exc:
             return JSONResponse({"error": str(exc)}, exc.status)
@@ -147,6 +154,7 @@ def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
               Route("/api/artifacts/{artifact_id}/preview", artifact_preview), Route("/api/artifacts/{artifact_id}/pages/{index}", artifact_page),
               Route("/api/models", api), Route("/api/setup", api), Route("/api/sessions", api), Route("/api/sessions/{session_id}", api),
               Route("/api/sessions/{session_id}/view", api), Route("/api/sessions/{session_id}/details", api),
+              Route("/api/sessions/{session_id}/background-shells", api),
               Route("/api/sessions/{session_id}/files/preview", api, methods=["POST"]),
               Route("/api/sessions/{session_id}/history", api), Route("/api/sessions/{session_id}/messages", api, methods=["POST"]),
               Route("/api/sessions/{session_id}/stop", api, methods=["POST"]),

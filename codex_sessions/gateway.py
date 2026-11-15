@@ -25,6 +25,7 @@ from .file_links import FileLinks
 from .thread_lifecycle import ThreadLifecycle
 from .session_details import SessionDetails
 from .changes import Changes
+from .background_shells import BackgroundShells
 
 SOURCES = ["cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview", "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown"]
 
@@ -67,6 +68,7 @@ class Gateway:
         self.models = Models(self)
         self.details = SessionDetails(self)
         self.changes = Changes(self)
+        self.background_shells = BackgroundShells(self)
         self.activity = Activity()
         self.reasoning = Reasoning(self.db)
         self.activity_polls = {}

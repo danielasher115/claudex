@@ -11,6 +11,10 @@
 - Recover existing agents with an observational attach tool and documented task handles.
 - Capture observed Git workspace changes made through shell commands, scripts, and commits, alongside native file events.
 - Separate the task brief and context-usage cards in the inspector.
+- Show the latest changed-files summary above the composer and native context usage on hover.
+- Remember the browser's steer/queue preference, defaulting to steer for active agents.
+- List session-scoped background shells reported by Codex and distinguish running tools from public thinking summaries.
+- Keep expanded commands and their output in the main chat scroll, preserving the position while inspecting older activity.
 - Include an optional Linux/WSL startup service for the native Codex backend and gateway.
 
 ## 0.1.0a1

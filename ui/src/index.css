@@ -374,7 +374,11 @@ select, option { background-color: var(--panel); color: var(--ink); }
 button.worklog-toggle:hover { color: var(--muted); }
 .worklog-chevron { opacity: 0; }
 .worklog-toggle:hover .worklog-chevron, .worklog-toggle:focus-visible .worklog-chevron, .worklog-toggle[aria-expanded=true] .worklog-chevron { opacity: 1; }
-.worklog-content { display: flex; flex-direction: column; gap: 4px; max-height: 224px; overflow: auto; margin: 4px 0 0; padding: 0; }
+.worklog-content { display: flex; min-width: 0; flex-direction: column; gap: 4px; margin: 4px 0 0; padding: 0; }
+.worklog-content .tool-output, .desktop-tool .tool-output { max-height: none; overflow: visible; overflow-wrap: anywhere; }
+.tool-command { overflow-wrap: anywhere; }
+.reasoning-content { min-width: 0; overflow-wrap: anywhere; }
+.reasoning-content .prose pre, .worklog-content .prose pre, .desktop-tool .prose pre { white-space: pre-wrap; overflow: visible; overflow-wrap: anywhere; }
 .worklog-content .tool-card, .desktop-tool .tool-card { flex-shrink: 0; margin: 0; border-color: transparent; background: transparent; }
 .worklog-content .tool-card > button, .desktop-tool .tool-card > button { min-height: 24px; padding: 4px 0; color: var(--faint); font-size: 13px; font-weight: 430; }
 .worklog-content .tool-card > button .font-medium, .desktop-tool .tool-card > button .font-medium { font-weight: 430; }

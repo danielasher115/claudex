@@ -57,7 +57,7 @@ function ConversationRecord({ item, matched = false, expanded, select, live = fa
     </button>
     {Array.isArray(item.images) && <div className="px-3"><AttachmentList files={item.images as Artifact[]} gallery /></div>}
     {open && <div className="border-t border-line px-3 py-3">
-      {command && <div className="mb-3 flex items-start gap-2 rounded-md bg-code px-3 py-2"><pre className="min-w-0 flex-1 overflow-auto whitespace-pre-wrap font-mono text-xs">$ {String(record.command ?? "")}</pre><CopyButton text={String(record.command ?? "")} label="Copy command" /></div>}
+      {command && <div className="mb-3 flex items-start gap-2 rounded-md bg-code px-3 py-2"><pre className="tool-command min-w-0 flex-1 whitespace-pre-wrap font-mono text-xs">$ {String(record.command ?? "")}</pre><CopyButton text={String(record.command ?? "")} label="Copy command" /></div>}
       {!command && Boolean(record.arguments) && <details className="mb-3 text-xs text-faint"><summary>Input</summary><pre className="tool-output mt-2">{typeof record.arguments === "string" ? record.arguments : JSON.stringify(record.arguments, null, 2)}</pre></details>}
       {output && <div className="relative pr-5">{command ? <pre className={`tool-output ${failed ? "text-removed-ink" : ""}`}>{output}</pre> : <Suspense fallback={<pre className="tool-output">{output}</pre>}><Markdown text={output} /></Suspense>}<div className="absolute right-0 top-0"><CopyButton text={output} label="Copy output" /></div></div>}
       {file && Array.isArray(record.changes) && record.changes.flatMap(change => diffFiles(String(change.diff ?? ""), String(change.path ?? ""), change.kind)).map((change, i) => <DiffFile key={i} file={change} />)}

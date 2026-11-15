@@ -9,16 +9,7 @@ function duration(seconds: number) {
   return value < 60 ? `${value}s` : value < 3600 ? `${Math.floor(value / 60)}m ${value % 60}s` : `${Math.floor(value / 3600)}h ${Math.floor(value / 60) % 60}m`;
 }
 
-function heading(items: Item[]) {
-  for (const item of [...items].reverse()) {
-    if (itemRecord(item).type !== "reasoning") continue;
-    const reasoning = reasoningOf(itemRecord(item));
-    const last = [...reasoning.content.split(/\r?\n/)].reverse().find(line => line.trim() && !line.trim().startsWith("<!--") && !"<!--".startsWith(line.trim()));
-    const value = (reasoning.heading || last || "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[*_`#~]/g, "").replace(/^\s*[-+]\s+/, "").trim();
-    if (value) return value;
-  }
-  return "Thinking";
-}
+const runningItem = (item: Item) => itemRecord(item).type !== "reasoning" && ["inProgress", "running"].includes(String(itemRecord(item).status));
 
 function summary(items: Item[]) {
   const records = items.map(itemRecord);
@@ -44,34 +35,59 @@ function summary(items: Item[]) {
 
 function liveLabel(block: WorkBlock, session?: Session | null) {
   if (session?.activity?.turn_id === block.turnId && ["waiting_approval", "waiting_input", "waiting_agents"].includes(session.activity.phase)) return session.activity.label;
-  const running = [...block.items].reverse().map(itemRecord).find(record => record.status === "inProgress" || record.status === "running");
-  if (running) {
-    if (running.type === "commandExecution") return "Running command";
-    if (running.type === "fileChange") return "Editing files";
-    return `Using ${String(running.tool || running.name || "tool")}`;
+  const running = [...block.items].reverse().find(runningItem);
+  const record = running && itemRecord(running);
+  if (record) {
+    if (record.type === "commandExecution") {
+      const actions = Array.isArray(record.commandActions) ? record.commandActions : [];
+      if (actions.length && actions.every(action => action.type === "read")) return "Reading files";
+      if (actions.length && actions.every(action => action.type === "search")) return "Searching files";
+      if (actions.length && actions.every(action => action.type === "listFiles")) return "Listing files";
+      if (actions.length && actions.every(action => ["read", "search", "listFiles"].includes(action.type))) return "Exploring files";
+      return "Running command";
+    }
+    if (record.type === "fileChange") return "Editing files";
+    if (record.type === "webSearch") return "Searching the web";
+    return `Using ${String(record.tool || record.name || "tool")}`;
   }
-  return heading(block.items);
+  return "Thinking";
 }
 
 function Thinking({ label }: { label: string }) {
   return <div role="status" className="desktop-thinking"><span className="thinking-shimmer">{label}</span></div>;
 }
 
-function Work({ block, expanded, matchedIds, select, session }: { block: WorkBlock; expanded?: boolean; matchedIds?: Set<string>; select?: (id: string) => void; session?: Session | null }) {
+interface WorkProps { block: WorkBlock; expanded?: boolean; matchedIds?: Set<string>; select?: (id: string) => void; session?: Session | null }
+
+function Work(props: WorkProps) {
+  const { block, expanded, matchedIds, select, session } = props;
+  const groups: { reasoning: boolean; items: Item[] }[] = [];
+  for (const item of block.items) {
+    const reasoning = itemRecord(item).type === "reasoning";
+    const last = groups.at(-1);
+    if (last?.reasoning === reasoning) last.items.push(item);
+    else groups.push({ reasoning, items: [item] });
+  }
+  const last = block.items.at(-1);
+  const currentReasoning = last && itemRecord(last).type === "reasoning" ? reasoningOf(itemRecord(last)) : null;
+  const waiting = session?.activity?.turn_id === block.turnId && session.activity.phase.startsWith("waiting_");
+  const thinking = block.active && !block.items.some(runningItem) && (waiting || !currentReasoning?.heading && !currentReasoning?.content);
+  return <>{groups.map(group => group.reasoning ? group.items.map(item => <ConversationItem key={item.id} sessionId={session?.id} item={item} expanded={expanded} matched={matchedIds?.has(item.id)} select={select} />) : <ToolWork {...props} key={group.items[0].id} block={{ ...block, items: group.items, active: block.active && group.items.some(runningItem) }} />)}{thinking && <Thinking label={liveLabel(block, session)} />}</>;
+}
+
+function ToolWork({ block, expanded, matchedIds, select, session }: WorkProps) {
   const [choice, setChoice] = useState(false);
   useEffect(() => { if (expanded !== undefined) setChoice(expanded); }, [expanded]);
   const matched = block.items.some(item => matchedIds?.has(item.id));
   const open = matched || choice;
-  const activities = block.items.filter(item => itemRecord(item).type !== "reasoning" || matchedIds?.has(item.id));
-  if (!activities.length) return block.active ? <Thinking label={liveLabel(block, session)} /> : null;
+  const activities = block.items;
   const only = activities.length === 1 ? itemRecord(activities[0]) : null;
   const running = only && ["inProgress", "running"].includes(String(only.status));
   const multiPatch = only?.type === "fileChange" && Array.isArray(only.changes) && only.changes.length !== 1;
   if (!block.active && only && !running && !multiPatch) return <div className="desktop-tool" data-work-turn={block.turnId}><ConversationItem sessionId={session?.id} item={activities[0]} expanded={expanded} matched={matchedIds?.has(activities[0].id)} select={select} compact /></div>;
   const label = block.active ? liveLabel(block, session) : summary(activities);
-  const streaming = block.active && !block.items.some(item => ["inProgress", "running"].includes(String(itemRecord(item).status)));
   return <section className="worklog" data-work-turn={block.turnId} aria-label="Agent work">
-    <button type="button" aria-expanded={open} onClick={() => setChoice(!open)} className="worklog-toggle"><span aria-live={block.active ? "polite" : undefined} className={`min-w-0 truncate ${streaming ? "thinking-shimmer" : ""}`}>{label}</span><ChevronRight className={`worklog-chevron size-3.5 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} /></button>
+    <button type="button" aria-expanded={open} onClick={() => setChoice(!open)} className="worklog-toggle"><span aria-live={block.active ? "polite" : undefined} className="min-w-0 truncate">{label}</span><ChevronRight className={`worklog-chevron size-3.5 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} /></button>
     {open && <div className="worklog-content">{activities.map(item => <ConversationItem sessionId={session?.id} key={item.id} item={item} expanded={expanded} matched={matchedIds?.has(item.id)} select={select} compact />)}</div>}
   </section>;
 }
