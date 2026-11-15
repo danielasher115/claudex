@@ -430,3 +430,22 @@ def test_ready_mcp_inventory_does_not_wait_for_slow_workspace_config(tmp_path):
             release.set()
             await config
     asyncio.run(check())
+
+
+@pytest.mark.parametrize('launch,expected', [({'inherit_context': False}, False), ({'inherit_context': True}, True), ({}, True)])
+def test_recorded_inheritance_status_comes_from_launch_evidence(tmp_path, launch, expected):
+    service = instance(tmp_path, [{'type': 'session_meta', 'payload': {'base_instructions': {'text': 'Native Codex rules'}}}]).state.service
+    service.db.execute('INSERT INTO agents VALUES (?,?,?,?,?,?,?,?,?,?,?,0)',
+                       ('a', None, 'Task', 0, 1, 1, 'read-only', '/project', 'turn', 0, json.dumps(launch)))
+
+    recorded, _, _ = service.details.recorded('a', service.history.sessions()[0], service.protocol.agent('a'), {})
+
+    assert recorded['inheritance']['enabled'] is expected
+    assert recorded['inheritance']['instruction_files'] == 0
+    assert recorded['instructions'][0]['text'] == 'Native Codex rules'
+
+
+def test_native_session_does_not_claim_caller_inheritance_was_disabled(tmp_path):
+    service = instance(tmp_path).state.service
+    recorded, _, _ = service.details.recorded('a', service.history.sessions()[0], None, {})
+    assert recorded['inheritance'].get('enabled') is None

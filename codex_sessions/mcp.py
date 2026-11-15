@@ -3,6 +3,7 @@ import asyncio
 import json
 import sys
 import time
+from urllib.parse import quote
 
 from . import __version__
 from .client import call, endpoint
@@ -18,11 +19,18 @@ INSTRUCTIONS = (
     "Before delegating, read the bundled codex-agents skill with protocol_guide or resources/read at codex-sessions://skills/codex-agents. "
     "The gateway defaults to High effort unless the user or parent explicitly selects another effort. "
     "Use models_list to choose a Codex worker, then agents_launch to delegate work. "
-    "Launches inherit available saved instructions, memory, skill inventories and compatible settings by default. "
-    "The installed Claude context hook exports the exact caller's public history automatically; verify caller_session_id and conversation_messages in inherited_context. "
-    "Use session_summary for an extra handoff or when the hook is unavailable. After hook installation restart Claude and resume its chat, then reconnect this MCP. "
+    "Codex is not a native Claude subagent and does not automatically know the caller's work, conversation, decisions or Claude-specific rules, memories and skills. "
+    "Keep inherit_context=true (the default) for ordinary delegation, even when providing a brief or plan, to avoid losing context or following the wrong project conventions. "
+    "Claude may autonomously choose inherit_context=false for a deliberate clean isolated agent; that omits automatic Claude handoff while native Codex instructions may still apply. "
+    "Never silently switch inheritance off after an export error. Check inherited_context.enabled, provider, source counts, caller export metadata and warnings in the launch receipt or agents_status when a task handle is returned; do not claim omitted context was inherited. "
+    "Give a focused task prompt or session_summary. The installed Claude context hook keeps a digest-checked public transcript reference available for on-demand lookup, without preloading all prior history. "
+    "Verify caller_session_id and conversation_messages in inherited_context; the count describes available messages, not messages read by the worker. "
+    "Use session_summary for a focused handoff or when the hook is unavailable. Hook/settings changes reload live; re-read protocol_guide, and reconnect only the Codex MCP through /mcp when server code or tools need refreshing, keeping the conversation and accepted agents. "
     "Task-capable clients receive a tracked MCP task; do not launch the same work again while it runs. "
     "Other clients receive an immediate thread_id and can use agents_status, agents_wait and agents_result. "
+    "After caller disconnect or lost handles, use agents_list (filter=all for saved history), then agents_attach on the existing thread_id. "
+    "Attach inspects the same-home thread and recovers current/root turns, durable message handles and a dashboard URL without launching, resuming, adopting or reparenting work. "
+    "Keep polling an original taskId with tasks/get, or use recovered thread/turn/message handles with agents_wait or agents_result; do not relaunch accepted work. "
     "Use agents_transcript for paginated history and agents_children for delegated children. "
     "agents_send steers active agents by default and starts a new turn when idle; use mode=queue explicitly to defer. "
     "The bridge binds an omitted steering target to the observed active turn. Explicit stale targets and steering races fail without falling back to queue. "
@@ -138,6 +146,8 @@ class Bridge:
                 else:
                     operation = self.operation(name.replace("_", ".", 1), arguments)
                     data = await self.mutate(request_id, name, operation) if name in ("agents_launch", "agents_send") else await operation
+                    if name == "agents_attach":
+                        data = {**data, "dashboard_url": f"{self.tasks.dashboard_url}/sessions/{quote(data['thread_id'], safe='')}"}
                     result = tool_result(data, isinstance(data, dict) and data.get("status") in ("failed", "interrupted", "uncertain"))
             else:
                 return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}}

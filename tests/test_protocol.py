@@ -83,10 +83,28 @@ def test_context_opt_out_is_inherited_by_children(tmp_path):
     async def check():
         instance = service(tmp_path); instance.rpc = AgentRuntime()
         parent = await instance.protocol.launch({"prompt": "Isolated parent", "cwd": str(tmp_path), "inherit_context": False})
+        assert parent['inherited_context'].get('enabled') is False
+        assert 'inherit_context=false' in parent['inherited_context'].get('disabled_reason', '')
+        assert parent['inherited_context']['warnings']
         child = await instance.protocol.launch({"prompt": "Isolated child", "parent_id": parent["thread_id"]})
+        assert child['inherited_context'].get('enabled') is False
         assert child["inherited_context"]["instruction_files"] == 0
         assert child["inherited_context"]["memory_files"] == 0
         assert child["inherited_context"]["skills"] == 0
+        state = await instance.protocol.status(parent['thread_id'])
+        assert state['inherited_context'].get('enabled') is False
+        result = await instance.protocol.result(parent['thread_id'])
+        assert result['inherited_context'].get('enabled') is False
+    asyncio.run(check())
+
+
+def test_empty_context_bundle_reports_default_inheritance_independently_of_counts(tmp_path):
+    async def check():
+        instance = service(tmp_path); instance.rpc = AgentRuntime()
+        launched = await instance.protocol.launch({'prompt': 'Default inheritance', 'cwd': str(tmp_path), 'context': {}})
+        assert launched['inherited_context']['instruction_files'] == 0
+        assert launched['inherited_context'].get('enabled') is True
+        assert launched['inherited_context'].get('disabled_reason') is None
     asyncio.run(check())
 
 

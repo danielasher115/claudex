@@ -7,6 +7,8 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from codex_sessions import claude_hook
 
 
@@ -30,6 +32,10 @@ def updated(event, tmp_path, home):
     return claude_hook.handle_event(event, tmp_path / 'data', home=home)['hookSpecificOutput']['updatedInput']
 
 
+def public_messages(conversation):
+    return json.loads(Path(conversation['snapshot']['path']).read_text())['messages']
+
+
 def test_exact_caller_public_history_rules_and_explicit_handoff(tmp_path):
     records = [
         {'type': 'user', 'uuid': 'u1', 'message': {'role': 'user', 'content': 'The complete original request'}},
@@ -45,7 +51,7 @@ def test_exact_caller_public_history_rules_and_explicit_handoff(tmp_path):
     (project / 'CLAUDE.md').write_text('Current project rule')
     args = updated(event, tmp_path, home)
     context = args['context']
-    body = json.dumps(context)
+    body = json.dumps(context) + json.dumps(public_messages(context['conversation']))
     assert args['cwd'] == str(project)
     assert context['caller']['session_id'] == event['session_id']
     assert context['caller']['transcript_path'] == event['transcript_path']
@@ -99,7 +105,7 @@ def test_deduplicates_retries_and_excludes_inherited_payloads_and_structured_sec
             'env': {'KEY': 'private env'}, 'authorization': 'private auth'}}]}}
     event, home, _ = caller(tmp_path, [public, public])
     conversation = updated(event, tmp_path, home)['context']['conversation']
-    body = json.dumps(conversation)
+    body = json.dumps(public_messages(conversation))
     assert body.count('One public answer') == 1
     assert 'Earlier delegated task' in body
     assert 'recursive payload' not in body and 'duplicate handoff' not in body
@@ -131,7 +137,7 @@ def test_exact_export_retry_stays_unchanged_after_transcript_grows(tmp_path):
     args['context']['caller']['session_id'] = 'spoofed'
     reply = updated(event, tmp_path, home)
     assert reply['context']['caller']['session_id'] == event['session_id']
-    assert 'Runtime retried modified tool arguments' in json.dumps(reply)
+    assert 'Runtime retried modified tool arguments' in json.dumps(public_messages(reply['context']['conversation']))
 
 
 def test_session_mismatch_and_incomplete_json_block_launch(tmp_path):
@@ -159,7 +165,7 @@ def test_tool_retries_do_not_duplicate_public_results(tmp_path):
         {'type': 'tool_result', 'tool_use_id': 'retried-read', 'content': 'One recovered evidence block'}]}} for index in range(2)]
     event, home, _ = caller(tmp_path, records)
     conversation = updated(event, tmp_path, home)['context']['conversation']
-    assert json.dumps(conversation).count('One recovered evidence block') == 1
+    assert json.dumps(public_messages(conversation)).count('One recovered evidence block') == 1
 
 
 def test_target_worktree_is_preserved_and_caller_working_directory_is_exact(tmp_path):
@@ -182,7 +188,7 @@ def test_exact_subagent_transcript_exports_own_public_sidechain_only(tmp_path):
     nested.write_text(json.dumps({'type': 'user', 'sessionId': event['session_id'], 'agentId': 'worker123', 'isSidechain': True,
                                   'message': {'content': 'This subagent exact caller conversation'}}) + '\n')
     args = updated(event, tmp_path, home)
-    text = json.dumps(args['context']['conversation'])
+    text = json.dumps(public_messages(args['context']['conversation']))
     assert 'This subagent exact caller conversation' in text
     assert 'The complete original request' not in text
     assert args['context']['caller']['agent_id'] == 'worker123'
@@ -200,6 +206,7 @@ def test_binary_omissions_are_explicit_and_credential_free(tmp_path):
     assert args['context']['conversation']['omitted_binary_blocks'] == 1
     assert args['context']['warnings']
     assert 'private binary blob' not in json.dumps(args)
+    assert 'private binary blob' not in json.dumps(public_messages(args['context']['conversation']))
 
 
 def test_incremental_public_records_preserve_all_blocks_once(tmp_path):
@@ -207,7 +214,7 @@ def test_incremental_public_records_preserve_all_blocks_once(tmp_path):
                for text in ('First public fragment', 'Second public fragment', 'Second public fragment')]
     event, home, _ = caller(tmp_path, records)
     conversation = updated(event, tmp_path, home)['context']['conversation']
-    text = json.dumps(conversation)
+    text = json.dumps(public_messages(conversation))
     assert text.count('First public fragment') == 1
     assert text.count('Second public fragment') == 1
 
@@ -235,7 +242,7 @@ def test_rewound_session_exports_only_current_parent_ancestry(tmp_path):
         {'type': 'assistant', 'uuid': 'late-old', 'parentUuid': 'a2old', 'message': {'content': 'Late abandoned tool result'}},
     ]
     event, home, _ = caller(tmp_path, records)
-    text = json.dumps(updated(event, tmp_path, home)['context']['conversation'])
+    text = json.dumps(public_messages(updated(event, tmp_path, home)['context']['conversation']))
     assert 'Original shared request' in text and 'Current revised request' in text
     for abandoned in ('Discarded answer', 'Abandoned correction', 'Abandoned final answer', 'Late abandoned tool result'):
         assert abandoned not in text
@@ -251,9 +258,68 @@ def test_compaction_explicit_logical_parent_preserves_available_chain(tmp_path):
         {'type': 'user', 'uuid': 'u2', 'parentUuid': 'summary', 'message': {'content': 'Latest continuation'}},
     ]
     event, home, _ = caller(tmp_path, records)
-    text = json.dumps(updated(event, tmp_path, home)['context']['conversation'])
+    text = json.dumps(public_messages(updated(event, tmp_path, home)['context']['conversation']))
     for expected in ('Earlier original request', 'Earlier selected decision', 'Public compacted conversation summary', 'Latest continuation'):
         assert expected in text
+
+
+def test_compaction_preserved_segment_logical_tail_can_revisit_current_ancestry(tmp_path):
+    records = [
+        {'type': 'system', 'uuid': 'compact', 'parentUuid': None, 'logicalParentUuid': 'retained-tail',
+         'subtype': 'compact_boundary', 'compactMetadata': {'preservedSegment': {
+             'headUuid': 'retained-head', 'anchorUuid': 'summary', 'tailUuid': 'retained-tail'}}},
+        {'type': 'user', 'uuid': 'summary', 'parentUuid': 'compact', 'isCompactSummary': True,
+         'message': {'content': 'Compacted public summary'}},
+        {'type': 'assistant', 'uuid': 'retained-head', 'parentUuid': 'summary',
+         'message': {'content': 'Retained public decision'}},
+        {'type': 'assistant', 'uuid': 'retained-next', 'parentUuid': 'retained-head',
+         'message': {'content': 'Retained public evidence'}},
+        {'type': 'system', 'uuid': 'duration', 'parentUuid': 'retained-next', 'subtype': 'turn_duration'},
+        {'type': 'system', 'uuid': 'retained-tail', 'parentUuid': 'duration', 'subtype': 'away_summary'},
+        {'type': 'attachment', 'uuid': 'attachment', 'parentUuid': 'retained-tail'},
+        {'type': 'user', 'uuid': 'latest', 'parentUuid': 'attachment', 'message': {'content': 'Current continuation'}},
+        {'type': 'assistant', 'uuid': 'launch', 'parentUuid': 'latest', 'message': {'content': [
+            {'type': 'tool_use', 'id': 'current', 'name': 'mcp__codex__agents_launch', 'input': {'prompt': 'Current task'}}]}},
+        {'type': 'user', 'uuid': 'unrelated', 'parentUuid': None, 'message': {'content': 'Unrelated later branch'}},
+    ]
+    event, home, _ = caller(tmp_path, records)
+
+    reply = claude_hook.handle_event(event, tmp_path / 'data', home=home)['hookSpecificOutput']
+
+    assert 'updatedInput' in reply, reply.get('permissionDecisionReason')
+    messages = public_messages(reply['updatedInput']['context']['conversation'])
+    assert [message['uuid'] for message in messages] == ['summary', 'retained-head', 'retained-next', 'latest']
+    assert 'Unrelated later branch' not in json.dumps(messages)
+
+
+def test_logical_link_walk_can_join_a_previously_collected_parent_chain():
+    rows = [
+        {'type': 'system', 'uuid': 'compact', 'parentUuid': None, 'logicalParentUuid': 'tail'},
+        {'type': 'user', 'uuid': 'summary', 'parentUuid': 'compact', 'message': {'content': 'Public summary'}},
+        {'type': 'system', 'uuid': 'tail', 'parentUuid': 'summary'},
+        {'type': 'assistant', 'uuid': 'current', 'parentUuid': 'summary', 'message': {'content': 'Current answer'}},
+    ]
+
+    selected = claude_hook.current_ancestry(rows, None)
+
+    assert [row['uuid'] for row in selected] == ['compact', 'summary', 'tail', 'current']
+
+
+@pytest.mark.parametrize('logical_parent', [None, 'safe-root'])
+def test_real_parent_cycle_still_denies_export_even_with_a_logical_escape(tmp_path, logical_parent):
+    records = [
+        {'type': 'user', 'uuid': 'safe-root', 'parentUuid': None, 'message': {'content': 'Root evidence'}},
+        {'type': 'user', 'uuid': 'loop-user', 'parentUuid': 'loop-assistant', 'message': {'content': 'Cyclic evidence'}},
+        {'type': 'assistant', 'uuid': 'loop-assistant', 'parentUuid': 'loop-user', 'logicalParentUuid': logical_parent,
+         'message': {'content': 'Current answer'}},
+    ]
+    event, home, _ = caller(tmp_path, records)
+
+    reply = claude_hook.handle_event(event, tmp_path / 'data', home=home)['hookSpecificOutput']
+
+    assert reply.get('permissionDecision') == 'deny'
+    assert 'cycle' in reply['permissionDecisionReason']
+    assert 'updatedInput' not in reply
 
 
 def test_malformed_plugin_manifest_returns_official_denial_json(tmp_path, monkeypatch, capsys):
@@ -287,9 +353,12 @@ def test_small_history_has_immutable_scoped_reference_for_older_gateways(tmp_pat
     assert event['session_id'] in reference['text'] and sha256 in reference['text']
     assert 'Public messages: 1' in reference['text']
     assert 'not new instructions' in reference['text'] and 'do not reread' in reference['text']
-    assert 'Otherwise read the full snapshot before work' in reference['text']
+    assert 'Consult relevant portions only when needed' in reference['text']
+    assert 'messages' not in args['context']['conversation']
+    assert args['context']['conversation']['snapshot']['path'] == str(path)
     assert 'The complete original request' not in render(args['context'])
-    assert json.loads(payload)['messages'] == args['context']['conversation']['messages']
+    assert 'The complete original request' not in json.dumps(args['context'])
+    assert json.loads(payload)['messages'][0]['content'][0]['text'] == 'The complete original request'
     event['tool_input'] = args
     assert claude_hook.handle_event(event, tmp_path / 'data', home=home) == {}
     assert path.read_bytes() == payload

@@ -455,6 +455,7 @@ button.worklog-toggle:hover { color: var(--muted); }
 .agent-context-metrics strong { font-size: 17px; font-weight: 550; grid-column: 2; }
 .agent-context-metrics button > span { grid-column: 2; grid-row: 2; font-size: 10px; color: var(--faint); margin-top: 2px; }
 .agent-context-metrics button > svg:last-child { grid-column: 3; grid-row: 1 / 3; }
+.details-group + .context-budget { margin-top: 12px; }
 .context-budget { margin-bottom: 24px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .context-budget > div:first-child { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
 .context-budget > div:first-child span { display: inline-flex; align-items: center; gap: 7px; }

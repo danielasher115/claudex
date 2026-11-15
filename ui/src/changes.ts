@@ -3,7 +3,7 @@ import { textOf, type Item } from "./api";
 
 export interface FilePatch { raw: string; hunks: StructuredPatchHunk[]; binary: boolean }
 export interface ChangedFile { path: string; oldPath?: string; kind: string; patches: FilePatch[]; added: number; removed: number }
-export interface RunChanges { id: string; prompt: string; status: string; files: ChangedFile[]; source: "native" | "recorded"; lastItemId: string }
+export interface RunChanges { id: string; prompt: string; status: string; files: ChangedFile[]; source: "native" | "recorded" | "workspace"; warning?: string; lastItemId: string }
 export interface DiffRow { kind: "add" | "delete" | "context" | "hunk" | "meta"; text: string; oldLine: number | null; newLine: number | null }
 
 function cleanPath(path: string, cwd = "") {
@@ -43,7 +43,7 @@ export function diffFiles(raw: string, path = "", kind?: { type?: string; move_p
 }
 
 export function runChanges(items: Item[], cwd = ""): RunChanges[] {
-  const runs = new Map<string, RunChanges & { aggregate?: string }>();
+  const runs = new Map<string, RunChanges & { aggregate?: string; workspace?: string }>();
   let current = "recorded";
   for (const item of items) {
     const record = (item.type === "record" ? item.record : item) as Record<string, unknown>;
@@ -55,6 +55,8 @@ export function runChanges(items: Item[], cwd = ""): RunChanges[] {
     if (item.type === "turn") {
       run.status = String(item.status ?? "");
       if (typeof item.diff === "string") { run.aggregate = item.diff; run.source = "native"; }
+      if (typeof item.workspace_diff === "string") run.workspace = item.workspace_diff;
+      if (typeof item.workspace_warning === "string") run.warning = item.workspace_warning;
     }
     if (!run.prompt && (record.type === "userMessage" || record.type === "message" && record.role === "user")) run.prompt = textOf(record.text ?? record.content).trim().split("\n")[0].slice(0, 120);
     if (record.type !== "fileChange" || record.status !== "completed" || !Array.isArray(record.changes)) continue;
@@ -67,5 +69,10 @@ export function runChanges(items: Item[], cwd = ""): RunChanges[] {
       }
     }
   }
-  return [...runs.values()].map(({ aggregate, ...run }) => ({ ...run, files: aggregate === undefined ? run.files : aggregate.trim() ? diffFiles(aggregate, "", undefined, cwd) : [] }));
+  return [...runs.values()].map(({ aggregate, workspace, ...run }) => {
+    const native = aggregate === undefined ? run.files : aggregate.trim() ? diffFiles(aggregate, "", undefined, cwd) : [];
+    if (!workspace?.trim()) return { ...run, files: native };
+    const observed = diffFiles(workspace, "", undefined, cwd);
+    return { ...run, source: "workspace", files: [...observed, ...native.filter(file => !observed.some(other => other.path === file.path))] };
+  });
 }

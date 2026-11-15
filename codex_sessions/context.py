@@ -277,7 +277,8 @@ def capture(cwd, home=None, codex_home=None, claude_home=None):
     for path in sorted(user_instructions):
         add(path, "instructions", trusted=True)
     add_rules(claude_root / "rules", cwd, trusted=True)
-    skill_roots = [(root, [root]) for root in (claude_root / "skills", home / ".agents/skills", codex_root / "skills")]
+    user_skill_roots = (claude_root / "skills", home / ".agents/skills", codex_root / "skills")
+    skill_roots = [(root, [root]) for root in user_skill_roots]
     user_settings = {claude_root / "settings.json", claude_root / "settings.local.json"}
     setting_files = list(sorted(user_settings))
     for directory in chain:
@@ -368,13 +369,16 @@ def capture(cwd, home=None, codex_home=None, claude_home=None):
             result["warnings"].append(f"Could not inspect context directory {root}")
             continue
         for path in [*(child / "SKILL.md" for child in children), root / "SKILL.md"]:
-            if not allowed(path, scopes) or not path.is_file():
+            selected_scopes = [*scopes, project_root]
+            if root in user_skill_roots and path.parent != root and path.parent.is_symlink():
+                selected_scopes.append(path.parent.resolve())
+            if not allowed(path, selected_scopes) or not path.is_file():
                 continue
             resolved = path.resolve()
             if resolved in skill_paths:
                 continue
             skill_paths.add(resolved)
-            body = read(path, scopes)
+            body = read(path, selected_scopes)
             if body is None:
                 continue
             name = re.search(r"^name:\s*(.+)$", body, re.MULTILINE)
@@ -392,7 +396,7 @@ def capture(cwd, home=None, codex_home=None, claude_home=None):
     result["unsupported_settings"] = sorted(set(result["unsupported_settings"]))
     result["warnings"] = list(dict.fromkeys(result["warnings"]))
     if len(render(result)) > 400_000:
-        raise ValueError("The inherited context is too large. Supply an explicit context bundle or set inherit_context=false; nothing was truncated.")
+        raise ValueError("The inherited context is too large. Supply a complete explicit context bundle, or deliberately choose inherit_context=false for a clean agent; nothing was truncated.")
     return result
 
 
@@ -467,3 +471,15 @@ def report(context):
             "conversation_sha256": context.get("conversation", {}).get("content_sha256"),
             "conversation_snapshot": bool(context.get("conversation", {}).get("snapshot")),
             "export_id": context.get("export_id")}
+
+
+def report_request(request):
+    result = report(request.get("context") or {})
+    enabled = bool(request.get("inherit_context", True))
+    reason = None if enabled else ("Automatic Claude caller handoff is disabled (inherit_context=false). Caller rules, memories, "
+                                   "skills and conversation are not captured automatically; explicitly supplied context and native "
+                                   "Codex instructions can still apply.")
+    result.update(enabled=enabled, disabled_reason=reason)
+    if reason:
+        result["warnings"] = list(dict.fromkeys([*result["warnings"], reason]))
+    return result

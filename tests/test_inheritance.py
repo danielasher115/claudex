@@ -6,6 +6,7 @@ import uuid
 import pytest
 
 from codex_sessions.context import merge, render
+from codex_sessions.interfaces import tools
 from codex_sessions.inheritance import conversation_inputs
 from test_protocol import AgentRuntime
 from test_smoke import service
@@ -16,6 +17,11 @@ def conversation(messages):
     return {'version': 1, 'source': 'claude', 'session_id': str(uuid.uuid4()), 'cwd': '/project',
             'transcript_path': '/claude/projects/project/session.jsonl', 'message_count': len(messages),
             'content_sha256': hashlib.sha256(payload).hexdigest(), 'messages': messages}
+
+
+def test_launch_schema_advertises_inheritance_enabled_by_default():
+    launch = next(tool for tool in tools() if tool['name'] == 'agents_launch')
+    assert launch['inputSchema']['properties']['inherit_context'].get('default') is True
 
 
 def test_exact_history_survives_merge_as_user_evidence_not_developer_instructions(tmp_path):
@@ -38,6 +44,8 @@ def test_snapshot_integrity_and_location_are_checked_before_launch(tmp_path):
     data['snapshot'] = {'path': str(path), 'sha256': sha, 'bytes': len(raw)}
     result = conversation_inputs({'conversation': data}, tmp_path)
     assert str(path) in result[0]['text'] and sha in result[0]['text']
+    assert 'Consult relevant portions only when needed' in result[0]['text']
+    assert 'All of the earlier requirements.' not in result[0]['text']
     path.write_text('tampered')
     with pytest.raises(ValueError, match='integrity'):
         conversation_inputs({'conversation': data}, tmp_path)

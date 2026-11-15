@@ -44,3 +44,12 @@ test("real a and b directories are preserved in explicit paths and renames", () 
   const file = diffFiles("diff --git a/a/old.txt b/a/new.txt\nsimilarity index 100%\nrename from a/old.txt\nrename to a/new.txt\n")[0];
   expect([file.oldPath, file.path]).toEqual(["a/old.txt", "a/new.txt"]);
 });
+
+test("observed workspace patches supplement native evidence and expose provenance", () => {
+  const other = patch.replaceAll("src/app.ts", "native-only.ts");
+  const run = runChanges([{ id: "turn-a", type: "turn", turn_id: "a", diff: other, workspace_diff: patch, workspace_source: "observed-workspace", workspace_warning: "One large file omitted." }])[0];
+  expect(run.files.map(file => file.path)).toEqual(["src/app.ts", "native-only.ts"]);
+  expect(run.source).toBe("workspace");
+  expect(run.warning).toBe("One large file omitted.");
+  expect(runChanges([{ id: "turn-a", type: "turn", diff: patch, workspace_diff: "" }])[0].files).toHaveLength(1);
+});

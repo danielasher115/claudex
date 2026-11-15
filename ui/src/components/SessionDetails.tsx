@@ -11,7 +11,7 @@ export interface SessionDetailsData {
   recorded: {
     status: string; source: string; settings: Values; configured_settings?: Values; metadata: Values; context: Values;
     instructions: ContextDocument[]; memories: ContextDocument[];
-    task?: string; attachments?: Values[]; delegation?: Values; skills: Values[]; sources: Record<string, string>; inheritance?: Values; caller_conversation?: Values;
+    task?: string; attachments?: Values[]; delegation?: Values; skills: Values[]; sources: Record<string, string>; inheritance?: Values & { enabled?: boolean | null }; caller_conversation?: Values;
   };
   current: { scope: string; cwd: string; config: Section; skills: Section; mcp: Section; plugins: Section; apps: Section };
   warnings: string[];
@@ -28,6 +28,7 @@ const present = (value: unknown) => value !== null && value !== undefined && val
 const text = (value: unknown): string => value == null ? "Not recorded" : typeof value === "object" ? JSON.stringify(value, null, 2) : typeof value === "boolean" ? value ? "Yes" : "No" : String(value);
 const scopeName = (scope?: string) => scope === "current_thread_runtime" ? "Current thread runtime" : "Current workspace and runtime";
 const sourceLabel = (source: string) => ({ "skills/list": "Current workspace skill inventory", "plugin/list": "Installed plugins from Codex", "app/list": "Available apps from Codex", "mcpServerStatus/list": "Current runtime connections", "config/read configured MCP names": "Current workspace configuration" }[source] ?? source);
+const instructionTitle = (recorded: SessionDetailsData["recorded"]) => recorded.inheritance?.enabled === false && recorded.inheritance.instruction_files === 0 ? "Native instructions" : "Instructions";
 
 function Fields({ values, sources, prefix = "" }: { values: Values; sources?: Record<string, string>; prefix?: string }) {
   return <dl className="details-fields">{Object.entries(values).map(([key, value]) => <div key={key}>
@@ -59,7 +60,7 @@ function Documents({ title, files, query = "" }: { title: string; files: Context
 function AgentSummary({ session, recorded, current, navigate }: { session: Session; recorded: SessionDetailsData["recorded"]; current?: SessionDetailsData["current"]; navigate: (tab: string) => void }) {
   const connections = current?.mcp.status === "available" ? current.mcp.items?.length ?? 0 : null;
   const metrics = [
-    { title: "Instructions", value: recorded.instructions.length, icon: FileText, tab: "Context" },
+    { title: instructionTitle(recorded), value: recorded.instructions.length, icon: FileText, tab: "Context" },
     { title: "Memories", value: recorded.memories.length, icon: Brain, tab: "Context" },
     { title: "Inherited skills", value: recorded.skills.length, icon: Sparkles, tab: "Context" },
     { title: "Connections", value: connections ?? "Explore", icon: Plug, tab: "Integrations" },
@@ -159,6 +160,7 @@ export function SessionDetails({ session, close }: { session: Session; close: ()
       {loading && !data && <Loading label="Loading session context" />}
       {error && <p role="alert" className="mb-4 text-xs text-removed-ink">{error}</p>}
       {recorded && <AgentSummary session={session} recorded={recorded} current={current} navigate={setTab} />}
+      {recorded?.inheritance?.enabled === false && <div role="note" className="mb-5 rounded-lg border border-line bg-surface p-3 text-xs leading-relaxed text-muted"><p className="font-medium">Caller inheritance was disabled for this launch.</p><p className="mt-1">Saved caller rules, memory and skills were not inherited automatically. Native Codex instructions and explicitly supplied context may still be recorded.</p></div>}
       {data?.warnings.length ? <details className="mb-5 text-xs text-faint"><summary>{data.warnings.length} context availability note{data.warnings.length === 1 ? "" : "s"}</summary><ul className="mt-2 list-disc space-y-2 pl-4">{data.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details> : null}
       {tab === "Overview" && <>
         {recorded && <>
@@ -176,7 +178,7 @@ export function SessionDetails({ session, close }: { session: Session; close: ()
         {recorded.inheritance && <Group title="Launch inheritance" note="Sources and translation details captured when this agent was launched."><details className="details-entry"><summary><ChevronRight className="details-chevron" />Inspect inherited sources and coverage</summary><div className="details-entry-body"><Fields values={recorded.inheritance} /></div></details></Group>}
         {["session_summary", "latest_summary"].map(key => recorded.context[key] ? <Group key={key} title={key === "session_summary" ? "Inherited session summary" : "Latest context summary"}><pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed">{text(recorded.context[key])}</pre></Group> : null)}
         <label className="details-search"><Search className="size-3.5 text-faint" /><input type="search" aria-label="Filter context" placeholder="Search instructions, memories and inherited skills..." value={contextFilter} onChange={event => setContextFilter(event.target.value)} /></label>
-        <Documents title="Instructions" files={recorded.instructions.filter(matches)} query={contextFilter} /><Documents title="Memories" files={recorded.memories.filter(matches)} query={contextFilter} />
+        <Documents title={instructionTitle(recorded)} files={recorded.instructions.filter(matches)} query={contextFilter} /><Documents title="Memories" files={recorded.memories.filter(matches)} query={contextFilter} />
         <Group title={`Inherited skills (${recorded.skills.length})`} note="Skill references passed to this session at launch.">{recorded.skills.length ? recorded.skills.filter(matches).map((skill, index) => <Skill key={index} skill={skill} index={index} />) : <p className="text-xs text-faint">No inherited skills recorded</p>}</Group>
         <label className="mb-3 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2"><Search className="size-3.5 text-faint" /><input type="search" aria-label="Filter skills" placeholder="Find a skill..." className="min-w-0 flex-1 bg-transparent text-xs outline-none" value={skillFilter} onChange={event => setSkillFilter(event.target.value)} /></label>
         <Inventory section={current.skills} title="Available skills" empty="skills" filter={skillFilter}>{(skill, index) => <Skill key={index} skill={skill} index={index} />}</Inventory>

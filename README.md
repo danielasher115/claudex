@@ -100,13 +100,14 @@ Keep Claudex running and add this stdio MCP server to your Claude Code configura
 The server name `codex` matches the optional caller-context hook. Use the same user and data directory as the dashboard.
 The app's **Connect Claude** dialog also shows the configuration for your running instance.
 
-For automatic export of the launching Claude conversation, install the context hook:
+Install the bundled Claudex skill and the hook that exports the launching Claude conversation:
 
 ```bash
 claudex install-claude-context
 ```
 
-This updates your Claude user settings and preserves a backup. Restart or resume Claude Code and reconnect its Codex MCP server.
+This installs the skill in Claude's personal skills directory and updates its user settings, preserving backups of replaced content.
+Claude reloads hook settings live. Re-read the `codex-agents` skill and reconnect only the Codex MCP server to refresh its tools.
 Without the hook, agents can still launch; you can pass a `session_summary` for the handoff.
 For Claude on Windows talking to Claudex inside WSL, see the [WSL MCP configuration](docs/setup.md#windows-claude-with-a-wsl-gateway).
 

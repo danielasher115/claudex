@@ -114,3 +114,25 @@ test("shows the last turn input against its known context limit and retains sour
   expect(screen.getByText("Last turn input")).toBeTruthy();
   expect(screen.getByText("50,000 / 200,000 tokens")).toBeTruthy();
 });
+
+test("explains an explicit caller-inheritance opt-out while retaining native instruction evidence", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ...details,
+    recorded: { ...details.recorded, inheritance: { enabled: false, instruction_files: 0, memory_files: 0, skills: 0 },
+      instructions: [{ source: "Recorded base instructions", text: "Native Codex rules" }], skills: [] }
+  }), { headers: { "content-type": "application/json" } })));
+  render(<SessionDetails session={session} close={vi.fn()} />);
+  expect(await screen.findByText("Caller inheritance was disabled for this launch.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Native instructions/ })).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Context" }));
+  expect(screen.getByText("Caller inheritance was disabled for this launch.")).toBeTruthy();
+  expect(screen.getByText("Native Codex rules")).toBeTruthy();
+});
+
+test.each([true, null, undefined])("does not label enabled or unrecorded inheritance as disabled (%s)", async enabled => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ...details,
+    recorded: { ...details.recorded, inheritance: { enabled, instruction_files: 1 } }
+  }), { headers: { "content-type": "application/json" } })));
+  render(<SessionDetails session={session} close={vi.fn()} />);
+  await screen.findAllByText("Reasoning effort");
+  expect(screen.queryByText("Caller inheritance was disabled for this launch.")).toBeNull();
+});

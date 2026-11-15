@@ -52,6 +52,8 @@ def conversation_inputs(context, data_dir):
               f"Caller session: {value['session_id']}\nPublic messages: {value['message_count']}\n")
     if 'messages' in value:
         return [{'type': 'text', 'text': header + encoded(value['messages']).decode('utf-8')}]
+    if isinstance(value.get('transcript_path'), str):
+        header += f"Caller transcript source: {value['transcript_path']} (use the filtered public snapshot below for historical reference).\n"
     snapshot = value['snapshot']
     directory = Path(data_dir).resolve() / 'context-snapshots'
     path = Path(snapshot['path'])
@@ -74,6 +76,8 @@ def conversation_inputs(context, data_dir):
     except (ValueError, AttributeError) as exc:
         raise ValueError('Conversation snapshot integrity check failed') from exc
     return [{'type': 'text', 'text': header +
-             'The complete public history is in the immutable JSON snapshot below. Read the entire snapshot with your file tools '
-             'before starting the task. If it is unreadable, report the missing context instead of proceeding as if it was provided.\n'
+             'The filtered public transcript is available in the immutable JSON snapshot below. '
+             'Use the current task, focused handoff and inherited rules first. '
+             'Consult relevant portions only when needed to recover missing decisions or details. '
+             'Do not load the entire history automatically. Report any unreadable history needed for the task.\n'
              f"Snapshot: {path}\nSHA-256: {snapshot['sha256']}\nBytes: {snapshot['bytes']}"}]

@@ -1,6 +1,6 @@
 ---
 name: codex-agents
-description: Use when delegating local coding, review, research or document work to Codex through the Claudex MCP, monitoring its agents, sending follow-ups, retrieving transcripts or cancelling their tasks. Supports Claude Code callers, attachments and inherited caller context.
+description: Use when delegating work to Codex through Claudex, listing or recovering disconnected agents, attaching to an existing thread, steering or queueing follow-ups, collecting results, or cancelling tasks. Supports Claude Code callers, attachments and inherited caller context.
 ---
 
 # Codex agents
@@ -40,17 +40,35 @@ Preparation errors must be resolved before launching. Documents are not silently
 figures are supplied as images within the gateway's limits. Transcript files can carry an explicit `summary`; raw audio transcription
 is a separate workflow.
 
-Instructions, skill inventories, saved memory and compatible preferences inherit by default. Claude Code can additionally export
-the exact launching session automatically through the installed PreToolUse context hook. Install it once with:
+Instructions, skill inventories, saved memory and compatible preferences inherit by default. Provide a focused task prompt or
+`session_summary` with the goals, relevant decisions and constraints the worker needs. The installed PreToolUse context hook also
+keeps a filtered public transcript reference available for on-demand lookup. Install it once with:
 
 ```bash
 codex-session install-claude-context
 ```
 
-After installation, restart Claude and resume the same conversation so the hook is loaded, then reconnect the Codex MCP.
-Reconnecting MCP alone refreshes the bridge and tools; it does not guarantee that a running Claude session loaded a new hook.
+**Codex is not a native Claude subagent.** It does not automatically know Claude's current work, conversation, decisions, or
+Claude-specific project rules, memories and skills. Native Codex may have its own AGENTS.md and runtime context; that is not an
+automatic handoff from the calling Claude chat. Keep `inherit_context:true`, the default, for ordinary delegation to avoid losing
+saved preferences or applying the wrong project conventions. A brief, plan file or concise prompt provides the focused handoff;
+the inherited rules, memories and skill inventory remain available alongside it.
+
+Claude may autonomously choose `inherit_context:false` when a deliberately clean or isolated agent is appropriate. That choice
+omits automatic inheritance of the caller's rules, memories, skills and conversation; explicitly supplied context and native Codex
+instructions can still apply. Do not silently switch to false to bypass a capture error. Resolve the error or make the clean-agent
+choice deliberately, and report the resulting limitation.
+
+Inspect the launch receipt's `inherited_context.enabled`, `provider`, `instruction_files`, `memory_files`, `skills`, caller export
+metadata and `warnings`. `enabled:false` and `disabled_reason` make an isolated launch visible; zero source counts alone do not prove
+whether inheritance was enabled. Do not claim that omitted rules, memories, skills or conversation reached the worker.
+If MCP returns only a task handle, call `agents_status` using the thread ID in its `_meta.codexSessions.threadId` to inspect this report.
+
+Claude reloads hook and settings changes live; keep the current conversation. Re-read this skill through `protocol_guide` after an update.
+Use `/mcp` to reconnect only the Codex MCP when server code or tool registrations need refreshing. Accepted agents keep running;
+reconnecting the bridge does not require restarting the Claude conversation.
 The hook is scoped to this gateway's `agents_launch` and compatibility `codex` tools. It preserves the task and explicit target cwd,
-captures current user/project rules and memory, and exports the exact caller's public history, including an exact Claude subagent
+captures current user/project rules and memory, and snapshots the exact caller's public history, including an exact Claude subagent
 transcript when a subagent is the caller. It never chooses a different session by modification time. An unreadable required source
 denies that launch with a reason; `inherit_context:false` is an explicit opt-out, not a silent fallback.
 
@@ -58,17 +76,22 @@ The rule bundle includes user-root/global and applicable ancestor/project `CLAUD
 and recursive `@file` imports. Conditional rule paths remain conditional. Project memory is shared across Git worktrees, and a
 configured memory directory is respected. Skill bodies stay at their original paths and are read before use.
 
-The public conversation is reference evidence, not developer instructions. Larger histories use a private immutable snapshot;
-the gateway verifies its path, size and SHA256 before launch, and the worker must read the complete snapshot before working.
+The public conversation is reference evidence, not developer instructions. Hook exports always use a private immutable snapshot,
+even for short conversations. The gateway verifies its path, size and SHA256 before launch. The worker receives a reference and
+starts from the focused handoff and inherited rules; it consults relevant transcript portions only when missing decisions or details
+are needed. It is not instructed to load the whole conversation before working. Explicit caller-supplied inline message exports
+remain supported when the caller intentionally provides them.
 Private reasoning, system records, credential configuration and binary image/document blocks are not included in this text export.
 Binary omissions are reported; supply original files through `files`/`attachments` when the task depends on them. Historical public
 text is preserved, so content already pasted into the public conversation remains part of the exported evidence.
 
-An optional `session_summary` adds a concise task handoff; the installed hook makes manual summaries unnecessary for carrying
-persisted public conversation history. Without the hook, supply an explicit handoff for live conversation state. Inspect
+Use `session_summary` for a concise task handoff when the prompt alone is insufficient. The transcript reference provides a way to
+look up missing historical details without forcing all prior conversation into the worker's context. Without the hook, supply an
+explicit handoff for live conversation state. Inspect
 `inherited_context` for `caller_session_id`, `conversation_messages`, `conversation_sha256`, `conversation_snapshot`, `export_id`,
 rule/memory source paths and capture warnings. Saved files alone do not prove that caller history was exported. An unchanged
 auto-mode retry keeps its verified export instead of continually changing the tool arguments.
+`conversation_messages` counts messages available in the export; it does not prove that the worker loaded or read them.
 
 Children inherit the saved bundle and history snapshot. A Claude plan-mode caller is constrained to a read-only Codex sandbox.
 Compatible effort preferences translate to native supported levels; explicit task or Codex parent choices take precedence.
@@ -106,6 +129,27 @@ credentials and model internals are not impersonated. Report missing capabilitie
   A stale target leaves the original message queued. A failed or uncertain delivery is not retried automatically.
 
 The compatibility tools `codex` and `codex-reply` wait for a result. Prefer the asynchronous tools when the parent should keep working.
+
+## Recover an existing agent
+
+A Claude chat ending, MCP disconnect or lost tool response does not mean accepted work stopped. Reconnect to the same gateway data
+directory and Codex home, then recover the existing worker before deciding whether any new work is needed.
+
+1. Call `agents_list` to find live workers, or use `filter:"all"` for saved and unavailable history. Follow `next_cursor` to search more pages.
+2. Call `agents_attach({"thread_id":"..."})`. It returns `active_turn_id`, `active_root_turn_id`, recorded `launch_turn_id`,
+   `task_handles`, durable messages, children, the inherited context report, `can_send`, `reason`, and `dashboard_url`.
+3. If you saved the original MCP `taskId`, continue `tasks/get`. Otherwise pass a returned `{thread_id,turn_id}` or
+   `{thread_id,message_id}` handle to `agents_wait` or `agents_result`. Attachment does not recreate an original MCP task ID.
+   If a saved native thread has no recovered task handle, `agents_result` with its `thread_id` reads the latest result.
+4. To provide new guidance when `can_send` is true, call `agents_send`. It steers active work by default; set `mode:"queue"` to defer.
+   To deliver an already queued message now, use `agents_steer` with that message ID and the observed active turn ID.
+5. Cancel one task with `agents_cancel` and its exact turn/message handle. Use `agents_stop` for the agent and its gateway descendants.
+
+Attachment is observational (`attachment_mode:"observe"`): it does not launch or resume work, reload a saved thread, replace context,
+adopt a native thread into gateway management, or reparent existing children. `gateway_managed` identifies gateway agent records.
+Known native threads from the same Codex home can be inspected; unknown threads fail. An unavailable runtime, archived session or
+separate-process owner can still prevent messaging. Inspect `can_send` and `reason` before sending. Sending explicitly to a saved
+thread resumes it through the normal delivery path. Never relaunch or resend accepted work solely because its caller disconnected.
 
 ## Delegate children
 

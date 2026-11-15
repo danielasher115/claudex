@@ -108,10 +108,24 @@ For a custom data directory, append `--data-dir` and its Linux path to `args`. T
 ### Caller conversation hook
 
 Run `claudex install-claude-context` in the environment where Claude Code runs. The installer adds a narrow PreToolUse hook
-for the `codex` MCP server and preserves the original user settings in a backup. Restart or resume Claude Code and reconnect MCP.
+for the `codex` MCP server and preserves the original user settings in a backup. Claude reloads hook settings live.
+Re-read the `codex-agents` skill and reconnect only the MCP server through `/mcp` to refresh its tools; keep the conversation open.
 The installer uses Claude Code's current exec-form hook support, so paths and arguments are passed directly without a shell.
 The hook exports the exact calling conversation's public messages, including a subagent caller. It excludes private reasoning
 and reports unavailable binary content. See [context inheritance](agent-protocol.md#caller-context) for the trust boundary.
+
+The worker receives project rules, memory, skill references and the focused task handoff. The filtered public transcript stays
+available through an immutable, validated snapshot reference; the worker consults relevant history when needed.
+
+For a trusted local Codex server, you can approve its tools through Claude's `/permissions` at user scope. The equivalent user setting is:
+
+```json
+{"permissions": {"allow": ["mcp__codex__*"]}}
+```
+
+That rule approves every tool on the server named `codex`. The installer preserves your permissions and does not add this approval.
+Claude's auto mode can otherwise require a review of a hook-expanded launch. Keep that review or grant a standing rule deliberately;
+do not disable inheritance merely to bypass an export or review error.
 
 ## Data and instances
 
@@ -151,6 +165,34 @@ stable loopback listener. Claudex does not automatically modify system proxy, ho
 Keep the proxy bound to loopback. See [security](../SECURITY.md) before exposing either listener beyond your machine.
 
 ## Common problems
+
+### Start automatically on Linux and WSL
+
+An enabled local HTTP proxy only forwards traffic; it does not start Claudex or the Codex backend after a reboot.
+For a Codex CLI that supports `codex app-server daemon start`, the optional user service starts both through their idempotent launchers.
+It uses the Linux Codex home explicitly, including when a Windows application supplies a different `CODEX_HOME` to its WSL child.
+
+From a checkout, with `codex` and `claudex` available in `~/.local/bin`:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp codex_sessions/systemd/claudex-autostart.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now claudex-autostart.service
+```
+
+The service starts with the user manager. To also start it when WSL boots without an interactive login, enable lingering for that user:
+
+```bash
+loginctl enable-linger "$USER"
+```
+
+Keep the data directory consistent with your MCP and hook configuration. For a non-default directory, set `CLAUDEX_DATA_DIR` in a
+user-service override or in your installed launcher. Existing attachments may contain absolute paths, so keep their directory in place.
+Stopping this startup service stops the gateway through `claudex stop`; the native daemon remains responsible for accepted Codex work.
+This service starts the launchers at login or boot; it does not supervise already detached processes or resume interrupted model turns.
+
+### Connection checks
 
 **The dashboard shows saved conversations but Codex is disconnected.** Check that the app-server is running and that the selected
 socket or `--codex-url` matches it. `--home` should refer to the intended Codex configuration and history.

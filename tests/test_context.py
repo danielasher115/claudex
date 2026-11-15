@@ -3,7 +3,7 @@ import re
 import subprocess
 import sys
 import pytest
-from codex_sessions.context import capture, merge, render, report
+from codex_sessions.context import capture, merge, render, report, report_request
 
 
 @pytest.fixture
@@ -16,6 +16,19 @@ def symlink():
                 pytest.skip("Windows symlink creation requires Developer Mode or elevated privileges")
             raise
     return create
+
+
+def test_isolated_request_reports_explicit_context_without_mutating_the_bundle():
+    context = {'provider': 'caller', 'instructions': [{'source': 'explicit', 'text': 'Only this supplied rule'}],
+               'warnings': ['Existing notice']}
+
+    result = report_request({'inherit_context': False, 'context': context})
+
+    assert result['enabled'] is False
+    assert result['instruction_files'] == 1 and result['provider'] == 'caller'
+    assert result['disabled_reason'] in result['warnings']
+    assert 'explicitly supplied context' in result['disabled_reason']
+    assert context['warnings'] == ['Existing notice']
 
 
 def test_merge_preserves_distinct_scopes_for_the_same_imported_instruction():
@@ -370,6 +383,54 @@ def test_plugin_skill_paths_come_only_from_user_installed_manifest(tmp_path):
     context = capture(project, home=home)
     assert any(skill["name"] == "review" for skill in context["skills"])
     assert "UNTRUSTED PLUGIN CONTENT" not in json.dumps(context)
+
+
+@pytest.mark.skipif(sys.platform == 'win32', reason='Windows context capture rejects reparse points')
+def test_personal_skill_symlink_keeps_shared_skill_available(tmp_path, symlink):
+    home = tmp_path / 'home'; project = tmp_path / 'repo'
+    personal = home / '.claude/skills'; personal.mkdir(parents=True); project.mkdir()
+    shared = tmp_path / 'shared/skill'; shared.mkdir(parents=True)
+    (shared / 'SKILL.md').write_text('---\nname: shared-skill\ndescription: Use the shared workflow\n---\nRead sibling resources.')
+    symlink(personal / 'shared', shared, directory=True)
+
+    bundle = capture(project, home=home)
+
+    assert bundle['skills'] == [{'name': 'shared-skill', 'description': 'Use the shared workflow',
+                                 'path': str(shared / 'SKILL.md')}]
+    assert 'shared-skill' in render(bundle)
+
+
+def test_personal_skill_symlink_cannot_read_sensitive_target(tmp_path, symlink, monkeypatch):
+    from pathlib import Path
+    home = tmp_path / 'home'; project = tmp_path / 'repo'
+    personal = home / '.claude/skills'; personal.mkdir(parents=True); project.mkdir()
+    secret = home / '.ssh/private'; secret.mkdir(parents=True)
+    (secret / 'SKILL.md').write_text('SYNTHETIC PRIVATE MATERIAL')
+    symlink(personal / 'private', secret, directory=True)
+    original = Path.read_text
+    def checked_read(path, *args, **kwargs):
+        assert path.resolve() != secret / 'SKILL.md', 'Sensitive skill targets must be rejected before opening'
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'read_text', checked_read)
+
+    bundle = capture(project, home=home)
+
+    assert not bundle['skills']
+    assert 'SYNTHETIC PRIVATE MATERIAL' not in render(bundle)
+
+
+@pytest.mark.skipif(sys.platform == 'win32', reason='Windows context capture rejects reparse points')
+def test_project_skill_symlink_can_select_a_folder_inside_its_working_tree(tmp_path, symlink):
+    home = tmp_path / 'home'; project = tmp_path / 'repo'
+    home.mkdir(); selected = project / '.claude/skills'; selected.mkdir(parents=True)
+    shared = project / 'design/skills/review'; shared.mkdir(parents=True)
+    (shared / 'SKILL.md').write_text('name: project-review\ndescription: Follow the project review workflow')
+    symlink(selected / 'review', shared, directory=True)
+
+    bundle = capture(project, home=home)
+
+    assert bundle['skills'] == [{'name': 'project-review', 'description': 'Follow the project review workflow',
+                                 'path': str(shared / 'SKILL.md')}]
 
 
 def test_trusted_user_import_still_cannot_read_credentials(tmp_path):

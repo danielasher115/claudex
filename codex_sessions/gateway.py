@@ -17,13 +17,14 @@ from .history import History
 from .rpc import Rpc, RpcError
 from .protocol import Protocol
 from .models import Models
-from .context import report as context_report
+from .context import report_request as context_report
 from .activity import Activity
 from .media import Media
 from .reasoning import Reasoning
 from .file_links import FileLinks
 from .thread_lifecycle import ThreadLifecycle
 from .session_details import SessionDetails
+from .changes import Changes
 
 SOURCES = ["cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview", "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown"]
 
@@ -65,6 +66,7 @@ class Gateway:
         self.file_links = FileLinks(self)
         self.models = Models(self)
         self.details = SessionDetails(self)
+        self.changes = Changes(self)
         self.activity = Activity()
         self.reasoning = Reasoning(self.db)
         self.activity_polls = {}
@@ -77,6 +79,7 @@ class Gateway:
         self.thread_lifecycle.observe(message)
         self.protocol.turns.observe(message)
         self.details.observe(message)
+        self.changes.observe(message)
         self.activity.observe(message)
         self.reasoning.observe(message)
         params = message.get("params") or {}
@@ -241,7 +244,7 @@ class Gateway:
         session["messages"] = [dict(r) for r in self.db.execute("SELECT * FROM messages WHERE session_id=? ORDER BY created_at", (session_id,))]
         agent = self.protocol.agent(session_id)
         if agent:
-            session["inherited_context"] = context_report(json.loads(agent["request_json"]).get("context", {}))
+            session["inherited_context"] = context_report(json.loads(agent["request_json"]))
         return session
 
     async def item_turns(self, session_id, cursor):
@@ -309,6 +312,9 @@ class Gateway:
                     diff = self.db.execute("SELECT diff FROM turn_diffs WHERE session_id=? AND turn_id=?", (session_id, turn["id"])).fetchone()
                     if diff is not None:
                         marker["diff"] = diff["diff"]
+                    workspace = await self.changes.finish(session_id, turn)
+                    if workspace:
+                        marker.update(workspace_diff=workspace["diff"], workspace_source=workspace["source"], workspace_warning=workspace["warning"])
                     items.append(marker)
                     agent = self.protocol.agent(session_id)
                     original_request = json.loads(agent["request_json"]) if agent else {}
@@ -421,13 +427,26 @@ class Gateway:
             await self.deliver(message_id, "turn/steer", {"threadId": session_id, "expectedTurnId": expected_turn_id, "input": inputs})
             return dict(self.db.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone())
 
+    async def start_turn(self, session_id, params, cwd=None):
+        agent = self.protocol.agent(session_id)
+        cwd = cwd or (agent["cwd"] if agent else self.known_threads.get(session_id, {}).get("cwd"))
+        if cwd:
+            await self.changes.begin(session_id, cwd)
+        try:
+            result = await self.rpc.call("turn/start", params)
+        except (Exception, asyncio.CancelledError):
+            self.changes.pending.pop(session_id, None)
+            raise
+        self.changes.bind(session_id, result.get("turn", {}).get("id") or result.get("turnId"))
+        return result
+
     async def deliver(self, message_id, method, params):
         claimed = self.db.execute("UPDATE messages SET status='sending' WHERE id=? AND status='queued'", (message_id,))
         self.db.commit()
         if not claimed.rowcount:
             return
         try:
-            result = await self.rpc.call(method, params)
+            result = await self.start_turn(params["threadId"], params) if method == "turn/start" else await self.rpc.call(method, params)
             turn_id = result.get("turnId") or result.get("turn", {}).get("id")
             self.db.execute("UPDATE messages SET status='delivered',turn_id=? WHERE id=?", (turn_id, message_id))
         except (RpcError, OSError, TimeoutError) as exc:
@@ -531,6 +550,7 @@ class Gateway:
                 job.cancel()
             if self.media_jobs:
                 await asyncio.gather(*list(self.media_jobs), return_exceptions=True)
+            await self.changes.close()
             await self.protocol.turns.close()
             await self.rpc.close()
             self.reasoning.flush()

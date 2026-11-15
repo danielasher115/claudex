@@ -14,6 +14,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32" or not shutil.which("bas
     (["codex-session", "sta"], {"start", "status"}),
     (["codex-sessions", "--home", "/some/home", "res"], {"restart"}),
     (["codex-session", "call", "agents.st"], {"agents.status", "agents.stop", "agents.steer"}),
+    (["codex-session", "call", "agents.a"], {"agents.attach"}),
     (["codex-sessions", "completion", "b"], {"bash"}),
     (["codex-session", "start", "--da"], {"--data-dir"}),
     (["codex-session", "start", "--ad"], {"--address-port"}),

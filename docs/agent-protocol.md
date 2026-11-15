@@ -13,6 +13,7 @@ the same thread is visible in the dashboard. Legacy `codex` and `codex-reply` MC
 | `agents.send` | Steer an active turn by default, or queue a new turn when idle |
 | `agents.steer` | Send an existing queued message into a specified active turn |
 | `agents.status` | Inspect runtime state, pending messages, children, and context inheritance |
+| `agents.attach` | Recover an existing thread's current state and task handles without starting, resuming, or adopting it |
 | `agents.wait` | Wait up to 60 seconds for a specified message or turn |
 | `agents.result` | Read the final report, structured output, changed files, commands, attachments, and child references |
 | `agents.children` | List explicit gateway parent-child relationships |
@@ -106,6 +107,32 @@ Reuse a stable UUID `request_id` when retrying a launch or send. Retries preserv
 Ambiguously accepted sends become `uncertain` and are not automatically repeated. A transport disconnect is not a reason to submit
 accepted work again. MCP cancellation resolves pending launch/send ownership before stopping its agent.
 
+## Recover after a caller disconnect
+
+Accepted work belongs to the gateway and Codex runtime. Losing the Claude chat or MCP connection does not prove that the task stopped.
+Reconnect to the same gateway data directory and Codex home before trying to recover it; do not launch a replacement task automatically.
+
+1. Call `agents.list` to find live workers. Use `filter: "all"` to include saved or unavailable history, and follow `next_cursor` as needed.
+2. Call `agents.attach` with the existing `thread_id`, or `agents_attach` through MCP. It returns current/root turn IDs, the original gateway
+   launch turn when recorded, durable `task_handles`, queued message receipts, children, context inheritance, `can_send`, and `dashboard_url`.
+3. Continue using an original MCP `taskId` with `tasks/get` if you saved it. Otherwise pass a returned `{thread_id, turn_id}` or
+   `{thread_id, message_id}` handle to `agents.wait` or `agents.result`. Attachment does not recreate the original MCP task ID.
+4. Send new guidance with `agents.send` only when `can_send` is true. Active workers receive steering by default; use `mode: "queue"` to defer.
+   Use `agents.steer` to deliver an existing queued message into a specified active turn without resending it.
+5. Use `agents.cancel` with an exact recovered turn/message handle for one task, or `agents.stop` for the agent and its gateway descendants.
+
+Attachment is observational (`attachment_mode: "observe"`). It does not start or resume a turn, subscribe to an unloaded thread,
+adopt a native thread into gateway management, replace inherited context, or change parent-child relationships. Known native threads
+from the same Codex home can be inspected; `gateway_managed` identifies threads with a gateway agent record. Unknown threads fail.
+An unavailable runtime, archived thread, or thread owned by a separate process can still prevent messaging; inspect `can_send` and `reason`.
+Attaching to a saved thread does not reload it. An explicit subsequent `agents.send` resumes it through the normal delivery path.
+
+For example, pass this file to `claudex call agents.attach --json request.json`:
+
+```json
+{"thread_id": "the-existing-thread-id"}
+```
+
 ## Caller context
 
 Context inheritance is enabled by default. It can include user and project instructions, rules, saved memory, available skill
@@ -123,17 +150,46 @@ native Codex sandbox and approval policy remain authoritative. Claude hooks, sla
 not impersonated. The report records settings that could not be translated.
 
 The optional Claude PreToolUse hook exports the exact caller's public conversation, including subagent callers. It does not select
-unrelated conversations. Install it with `claudex install-claude-context`, then restart or resume Claude and reconnect MCP.
-`context.caller` identifies the session, workspace, transcript, and permission mode. `context.conversation` contains versioned public
-messages and a SHA256 digest, or a gateway-validated immutable snapshot reference. History is supplied as reference evidence separately
-from instruction files. Larger snapshots must be read before work begins. Private reasoning is excluded; unavailable binary content is reported.
+unrelated conversations. Install it with `claudex install-claude-context`. Hook/settings changes reload live, so keep the current
+conversation and re-read `protocol_guide`. Reconnect only the Codex MCP through `/mcp` when server code or new tools need refreshing;
+accepted agents keep running and the Claude conversation does not need restarting.
+`context.caller` identifies the session, workspace, transcript, and permission mode. The hook puts versioned public history in a private
+immutable snapshot and supplies its reference even for short conversations. The gateway validates its path, size and SHA256 before launch.
+The worker starts from the focused prompt or `session_summary` plus inherited rules, memories and skill inventory. It consults relevant
+transcript portions on demand when decisions or details are missing, without loading the entire prior conversation automatically.
+Explicit external `context.conversation.messages` exports remain supported for callers intentionally supplying inline history.
+Private reasoning is excluded; unavailable binary content is reported. `conversation_messages` counts available messages, not messages read.
 
 `inherited_context` includes sources and caller export metadata for inspection. Import failures do not silently discard required rules.
-A `session_summary` supplements the automatic export or provides a handoff when the hook is absent. An explicit `context` can include
+A `session_summary` provides a focused handoff; the transcript reference supports later lookup when the hook is present. An explicit `context` can include
 `instructions` and `memories` arrays of `{source, text}`, a skill inventory, portable settings, and a summary.
 
-Set `inherit_context: false` to omit the caller bundle; native Codex configuration still applies. The caller's configuration roots are
-respected, and an explicit caller bundle is not supplemented from the gateway's home. Opt-outs propagate to children.
+Codex is not a native Claude subagent and has no automatic handoff of the caller's work, conversation, decisions or Claude-specific
+rules, memories and skills. Keep `inherit_context: true`, the default, for ordinary delegation, including tasks supplied as a brief or
+plan file. Claude may deliberately choose `inherit_context: false` for a clean isolated agent without asking for extra permission.
+This omits automatic caller inheritance; explicit supplied context and native Codex configuration can still apply. Never silently
+switch to false after an export error. Inspect receipt `inherited_context.enabled`, `disabled_reason`, provider, source counts,
+caller metadata and warnings to confirm the actual handoff. An empty bundle can still have inheritance enabled.
+
+The caller's configuration roots are respected, and an explicit caller bundle is not supplemented from the gateway's home.
+Opt-outs propagate to children, and launch, status and result receipts report the stored choice.
+
+## Recorded changes
+
+Codex's `turn/diff/updated` notification supplies the native aggregate patch; native `fileChange` items remain available in
+`changed_files`. These events do not cover every shell or CLI edit. The gateway also takes a bounded Git working-tree baseline before
+each turn it starts and compares it when the turn finishes. `agents.result.workspace_changes` contains that patch, its
+`observed-workspace` source, and any capture warning. The UI labels this evidence **Observed workspace**.
+
+The comparison excludes unchanged pre-existing dirty content and can detect edits committed during the turn, including the first
+commit in a new repository. It includes tracked and non-ignored untracked files, deletions, and executable-bit changes. Binary files
+receive metadata rather than a text preview. Linked or unreadable files and files exceeding the capture limits are omitted explicitly.
+Limits are 1 MiB per file, 16 MiB of compared content, and 2,000 changed paths.
+
+Workspace observations can include concurrent changes made by another process in the same working tree. Use isolated worktrees when
+author attribution matters. Baselines live in gateway memory; completed patches persist. A gateway restart during an active turn,
+an externally started turn, or a native continuation without a baseline retains native evidence without reconstructing a baseline.
+Non-Git workspaces also retain native evidence only.
 
 ## Child agents and stopping
 

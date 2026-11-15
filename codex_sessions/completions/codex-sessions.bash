@@ -37,7 +37,7 @@ _codex_sessions_complete()
                 ;;
             call)
                 if ((COMP_CWORD == command_index + 1)); then
-                    choices="protocol.guide models.list agents.launch agents.list agents.send agents.steer agents.status agents.wait agents.result agents.stop agents.cancel agents.children agents.transcript artifacts.put artifacts.get"
+                    choices="protocol.guide models.list agents.launch agents.list agents.attach agents.send agents.steer agents.status agents.wait agents.result agents.stop agents.cancel agents.children agents.transcript artifacts.put artifacts.get"
                 fi
                 ;;
         esac

@@ -46,8 +46,11 @@ def main():
         from .claude_setup import install
         try:
             result = install(args.data_dir)
-            print(f"{'Installed' if result['changed'] else 'Already installed'} Claude caller-context hook: {result['settings']}")
-            print("Restart Claude and resume the same conversation to reliably load the hook, then reconnect Codex MCP.")
+            print(f"{'Installed' if result['hook_changed'] else 'Already installed'} Claude caller-context hook: {result['settings']}")
+            print(f"{'Installed' if result['skill_changed'] else 'Already installed'} Claude codex-agents skill: {result['skill']}")
+            if result['skill_backup']:
+                print(f"Preserved previous skill: {result['skill_backup']}")
+            print("Claude reloads hook settings live. Re-read codex-agents and reconnect only the Codex MCP to refresh its tools.")
         except (OSError, ValueError, TypeError) as exc:
             parser.exit(1, str(exc) + "\n")
         return

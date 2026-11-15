@@ -7,7 +7,7 @@ from urllib.parse import urlsplit, urlunsplit
 from collections import OrderedDict
 
 from .rpc import RpcError
-from .context import report as context_report
+from .context import report as context_report, report_request
 
 CONFIG_FIELDS = {
     'model', 'model_provider', 'model_reasoning_effort', 'model_reasoning_summary', 'model_verbosity',
@@ -242,7 +242,9 @@ class SessionDetails:
         memories = [pick(item, {'source', 'text', 'condition', 'imported_from'}) for item in inherited.get('memories', [])]
         skills = [pick(item, {'name', 'path', 'description', 'enabled', 'scope'}) for item in inherited.get('skills', [])]
         context = {'tokens_used': row.get('tokens_used'), 'compactions': None}
-        inheritance = {key: clean(value) for key, value in context_report(inherited).items()}
+        inheritance = {key: clean(value) for key, value in (report_request(request) if agent else context_report(inherited)).items()}
+        if agent:
+            sources['inheritance.enabled'] = 'gateway launch request' if 'inherit_context' in request else 'gateway launch default'
         caller_conversation = pick(inherited.get('conversation') or {}, {'session_id', 'agent_id', 'agent_type', 'cwd',
             'transcript_path', 'permission_mode', 'captured_at', 'message_count', 'content_sha256', 'omitted_binary_blocks'})
         if (inherited.get('conversation') or {}).get('snapshot'):
