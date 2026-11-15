@@ -1,4 +1,7 @@
 import asyncio
+import os
+
+import pytest
 
 from test_smoke import service
 from codex_sessions.gateway import Gateway as Service
@@ -51,8 +54,8 @@ def repository(tmp_path):
     git(repo, "config", "user.email", "test@example.com")
     git(repo, "config", "user.name", "Test")
     for name in ("tracked.txt", "deleted.txt", "untouched.txt"):
-        (repo / name).write_text("original\n")
-    (repo / ".gitignore").write_text("ignored/\n")
+        (repo / name).write_text("original\n", newline="\n")
+    (repo / ".gitignore").write_text("ignored/\n", newline="\n")
     git(repo, "add", ".")
     git(repo, "commit", "-qm", "baseline")
     return repo
@@ -97,19 +100,19 @@ def test_shell_workspace_changes_include_real_patches_without_native_file_events
 def test_dirty_baseline_is_incremental_and_survives_agent_commit(tmp_path):
     async def check():
         repo = repository(tmp_path)
-        (repo / "tracked.txt").write_text("staged before turn\n")
+        (repo / "tracked.txt").write_text("staged before turn\n", newline="\n")
         git(repo, "add", "tracked.txt")
-        (repo / "tracked.txt").write_text("dirty before turn\n")
-        (repo / "untouched.txt").write_text("other preexisting edit\n")
-        (repo / "existing-new.txt").write_text("preexisting untracked\n")
+        (repo / "tracked.txt").write_text("dirty before turn\n", newline="\n")
+        (repo / "untouched.txt").write_text("other preexisting edit\n", newline="\n")
+        (repo / "existing-new.txt").write_text("preexisting untracked\n", newline="\n")
         app = service(tmp_path)
         original = app.rpc.call
 
         async def call(method, params=None):
             if method == "turn/start":
-                (repo / "tracked.txt").write_text("edited during turn\n")
-                (repo / "existing-new.txt").write_text("untracked edited during turn\n")
-                (repo / "committed.txt").write_text("committed during turn\n")
+                (repo / "tracked.txt").write_text("edited during turn\n", newline="\n")
+                (repo / "existing-new.txt").write_text("untracked edited during turn\n", newline="\n")
+                (repo / "committed.txt").write_text("committed during turn\n", newline="\n")
                 git(repo, "add", ".")
                 git(repo, "commit", "-qm", "agent commit")
                 return {"turn": {"id": "turn-active"}}
@@ -137,13 +140,12 @@ def test_observation_is_bounded_and_never_follows_links(tmp_path):
     repo = repository(tmp_path)
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "private.txt").write_text("private evidence must not be captured\n")
+    (outside / "private.txt").write_text("private evidence must not be captured\n", newline="\n")
     (repo / "linked").symlink_to(outside, target_is_directory=True)
     (repo / "binary.bin").write_bytes(b"before\0binary")
     base = baseline(repo)
     (repo / "binary.bin").write_bytes(b"after\0binary")
     (repo / "large.txt").write_bytes(b"x" * (MAX_FILE + 1))
-    os.mkfifo(repo / "pipe")
     (repo / "tracked.txt").unlink()
     (repo / "tracked.txt").symlink_to(outside / "private.txt")
     diff, warning = compare(base)
@@ -159,11 +161,11 @@ def test_workspace_patch_handles_spaces_and_missing_final_newlines(tmp_path):
     from codex_sessions.changes import baseline, compare
 
     repo = repository(tmp_path)
-    (repo / "space file.txt").write_text("before without newline")
+    (repo / "space file.txt").write_text("before without newline", newline="\n")
     git(repo, "add", ".")
     git(repo, "commit", "-qm", "file name")
     base = baseline(repo)
-    (repo / "space file.txt").write_text("after without newline")
+    (repo / "space file.txt").write_text("after without newline", newline="\n")
     diff, warning = compare(base)
     assert not warning
     assert "No newline at end of file" in diff
@@ -175,12 +177,12 @@ def test_completion_notification_captures_without_opening_the_page(tmp_path):
         repo = repository(tmp_path)
         app = service(tmp_path)
         await app.start_turn("a", {"threadId": "a", "input": []}, str(repo))
-        (repo / "tracked.txt").write_text("observed at completion\n")
+        (repo / "tracked.txt").write_text("observed at completion\n", newline="\n")
         app.notification({"method": "turn/completed", "params": {"threadId": "a", "turn": {"id": "turn-next", "status": "completed"}}})
         await app.changes.close()
         saved = app.changes.saved("a", "turn-next")
         assert "+observed at completion\n" in saved["diff"]
-        (repo / "tracked.txt").write_text("later unrelated edit\n")
+        (repo / "tracked.txt").write_text("later unrelated edit\n", newline="\n")
         assert "later unrelated" not in (await app.changes.finish("a", {"id": "turn-next", "status": "completed"}))["diff"]
         app.db.close()
 
@@ -191,7 +193,7 @@ def test_capture_budget_failure_does_not_attribute_preexisting_edits(tmp_path, m
     import codex_sessions.changes as changes
 
     repo = repository(tmp_path)
-    (repo / "tracked.txt").write_text("preexisting\n")
+    (repo / "tracked.txt").write_text("preexisting\n", newline="\n")
     monkeypatch.setattr(changes, "MAX_PATHS", 0)
     base = changes.baseline(repo)
     diff, warning = changes.compare(base)
@@ -207,7 +209,7 @@ def test_rejected_launch_and_send_discard_the_pending_baseline(tmp_path):
 
     async def check():
         repo = repository(tmp_path)
-        (repo / "tracked.txt").write_text("dirty baseline retained only while starting\n")
+        (repo / "tracked.txt").write_text("dirty baseline retained only while starting\n", newline="\n")
         app = service(tmp_path)
         app.rpc = AgentRuntime()
         original = app.rpc.call
@@ -261,7 +263,7 @@ def test_interrupted_and_failed_completions_release_the_baseline(tmp_path):
         for status in ("interrupted", "failed"):
             await app.changes.begin("a", str(repo))
             app.changes.bind("a", status)
-            (repo / "tracked.txt").write_text(f"{status} turn workspace\n")
+            (repo / "tracked.txt").write_text(f"{status} turn workspace\n", newline="\n")
             app.notification({"method": "turn/completed", "params": {"threadId": "a", "turn": {"id": status, "status": status}}})
             await app.changes.close()
             assert not app.changes.baselines
@@ -299,10 +301,10 @@ def test_unborn_repository_first_commit_keeps_new_files_and_excludes_preexisting
     git(repo, "init", "-q")
     git(repo, "config", "user.email", "test@example.com")
     git(repo, "config", "user.name", "Test")
-    (repo / "preexisting.txt").write_text("already here\n")
+    (repo / "preexisting.txt").write_text("already here\n", newline="\n")
     git(repo, "add", ".")
     base = baseline(repo)
-    (repo / "first-commit.txt").write_text("created during turn\n")
+    (repo / "first-commit.txt").write_text("created during turn\n", newline="\n")
     git(repo, "add", ".")
     git(repo, "commit", "-qm", "first commit during turn")
     diff, warning = compare(base)
@@ -311,18 +313,19 @@ def test_unborn_repository_first_commit_keeps_new_files_and_excludes_preexisting
     assert "preexisting.txt" not in diff
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows chmod does not support Git executable permission bits")
 def test_workspace_patches_preserve_executable_modes(tmp_path):
     import subprocess
     from codex_sessions.changes import baseline, compare
 
     repo = repository(tmp_path)
-    (repo / "removed.sh").write_text("#!/bin/sh\nexit 0\n")
+    (repo / "removed.sh").write_text("#!/bin/sh\nexit 0\n", newline="\n")
     (repo / "removed.sh").chmod(0o755)
     git(repo, "add", ".")
     git(repo, "commit", "-qm", "executable baseline")
     base = baseline(repo)
     (repo / "tracked.txt").chmod(0o755)
-    (repo / "added.sh").write_text("#!/bin/sh\nexit 0\n")
+    (repo / "added.sh").write_text("#!/bin/sh\nexit 0\n", newline="\n")
     (repo / "added.sh").chmod(0o755)
     (repo / "removed.sh").unlink()
     diff, warning = compare(base)
@@ -330,4 +333,26 @@ def test_workspace_patches_preserve_executable_modes(tmp_path):
     assert "old mode 100644\nnew mode 100755\n" in diff
     assert "new file mode 100755\n" in diff
     assert "deleted file mode 100755\n" in diff
+    subprocess.run(["git", "-C", str(repo), "apply", "--reverse", "--check", "-"], input=diff.encode(), check=True, capture_output=True)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="This platform does not provide POSIX FIFOs")
+def test_workspace_capture_omits_fifos_without_blocking(tmp_path):
+    from codex_sessions.changes import contents, OMITTED
+
+    os.mkfifo(tmp_path / "pipe")
+    assert contents(tmp_path, "pipe") is OMITTED
+
+
+def test_dirty_workspace_patch_preserves_crlf_bytes(tmp_path):
+    import subprocess
+    from codex_sessions.changes import baseline, compare
+
+    repo = repository(tmp_path)
+    (repo / "tracked.txt").write_bytes(b"before\r\n")
+    base = baseline(repo)
+    (repo / "tracked.txt").write_bytes(b"after\r\n")
+    diff, warning = compare(base)
+    assert not warning
+    assert "-before\r\n+after\r\n" in diff
     subprocess.run(["git", "-C", str(repo), "apply", "--reverse", "--check", "-"], input=diff.encode(), check=True, capture_output=True)
