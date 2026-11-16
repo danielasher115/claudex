@@ -236,14 +236,23 @@ export function SessionView({ id, summary, connected, onChange, pinned: isPinned
 
 function ContextWindow({ usage }: { usage: ContextUsage | null }) {
   const tooltipId = useId();
+  const tooltip = useRef<HTMLDivElement>(null);
+  const positionTooltip = () => {
+    const bubble = tooltip.current;
+    if (!bubble) return;
+    const icon = bubble.parentElement!.getBoundingClientRect();
+    const center = icon.left + icon.width / 2;
+    const half = bubble.offsetWidth / 2;
+    bubble.style.setProperty("--tooltip-shift", `${Math.max(8 + half - center, Math.min(0, innerWidth - 8 - half - center))}px`);
+  };
   const used = usage?.last?.total_tokens ?? usage?.last?.input_tokens;
   const window = usage?.model_context_window;
   const known = typeof used === "number" && Number.isFinite(used) && used >= 0 && typeof window === "number" && Number.isFinite(window) && window > 0;
   const percent = known ? Math.round(used / window * 100) : null;
   const label = known ? `${used.toLocaleString()} / ${window.toLocaleString()} tokens used` : "Context usage has not been recorded";
-  return <div tabIndex={0} role={known ? "meter" : "img"} aria-label="Context window" aria-valuemin={known ? 0 : undefined} aria-valuemax={known ? 100 : undefined} aria-valuenow={percent === null ? undefined : Math.min(100, percent)} aria-valuetext={known ? label : undefined} aria-describedby={tooltipId} className="group relative flex size-7 shrink-0 items-center justify-center rounded-full text-faint outline-none focus-visible:ring-2 focus-visible:ring-faint">
+  return <div tabIndex={0} onMouseEnter={positionTooltip} onFocus={positionTooltip} role={known ? "meter" : "img"} aria-label="Context window" aria-valuemin={known ? 0 : undefined} aria-valuemax={known ? 100 : undefined} aria-valuenow={percent === null ? undefined : Math.min(100, percent)} aria-valuetext={known ? label : undefined} aria-describedby={tooltipId} className="group relative flex size-7 shrink-0 items-center justify-center rounded-full text-faint outline-none focus-visible:ring-2 focus-visible:ring-faint">
     <svg className="size-[18px] -rotate-90" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="2.5" className="opacity-25" />{percent !== null && <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="2.5" pathLength="100" strokeDasharray={`${Math.min(100, percent)} 100`} strokeLinecap="round" />}</svg>
-    <div id={tooltipId} role="tooltip" className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-64 rounded-2xl border border-line bg-panel px-4 py-3 text-center text-xs leading-6 text-ink opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus:opacity-100"><p className="text-faint">Context window:</p>{percent !== null && <p className="text-muted">{percent}% full</p>}<p>{label}</p>{known && <p className="mt-1 text-[10px] leading-4 text-faint">Latest recorded native usage</p>}</div>
+    <div ref={tooltip} id={tooltipId} role="tooltip" className="context-tooltip pointer-events-none absolute bottom-full left-1/2 z-50 mb-3 w-64 -translate-x-1/2 rounded-2xl border border-line bg-panel px-4 py-3 text-center text-xs leading-6 text-ink opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus:opacity-100"><p className="text-faint">Context window:</p>{percent !== null && <p className="text-muted">{percent}% full</p>}<p>{label}</p>{known && <p className="mt-1 text-[10px] leading-4 text-faint">Latest recorded native usage</p>}</div>
   </div>;
 }
 

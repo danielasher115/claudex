@@ -287,7 +287,8 @@ body {
   .segmented button.selected { @apply bg-panel font-medium text-ink shadow-sm; }
   .filter-select { @apply rounded-md border border-line bg-transparent px-2 py-1.5 text-[11px] text-muted; }
   .nav-overview { @apply mb-3 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-[13px] font-medium; }
-  .project-heading { @apply flex items-center gap-1.5 px-3 py-2.5 text-left text-[11px] text-faint; }
+  .project-group { @apply mb-5; }
+  .project-heading { @apply mb-1 flex items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-muted transition-colors; }
   .session-row { @apply relative mb-0.5 flex items-center gap-1 rounded-lg px-3 py-2.5 transition-colors; }
   .pin-button { @apply absolute right-2 top-1.5 rounded p-1 text-faint transition-opacity hover:bg-panel hover:!opacity-100; }
   .session-row:hover button:first-child { padding-right: 12px; }
@@ -307,6 +308,19 @@ body {
   .earlier-button { @apply mx-auto mb-4 mt-2 flex items-center justify-center gap-2 rounded-lg border border-line px-4 py-2 text-[11px] text-faint hover:bg-hover; }
   .jump-latest { @apply absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-line bg-panel px-3 py-2 text-[11px] shadow-sm hover:bg-hover; }
   .composer-area { @apply shrink-0 bg-surface pb-4 pt-2; }
+  .context-tooltip { margin-left: var(--tooltip-shift, 0px); max-width: calc(100vw - 16px); }
+  .context-tooltip::after {
+    content: "";
+    position: absolute;
+    bottom: -5px;
+    left: calc(50% - var(--tooltip-shift, 0px));
+    width: 10px;
+    height: 10px;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    transform: translateX(-50%) rotate(45deg);
+  }
   .composer { @apply rounded-2xl border border-line bg-panel p-3 shadow-[0_2px_10px_0_rgb(0_0_0/0.03)] transition-colors focus-within:border-faint; }
   .delivery-select { @apply rounded-lg border border-line bg-transparent px-2 py-1.5 text-[11px] text-muted; }
   .send-button { @apply ml-auto flex size-8 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent transition-opacity hover:opacity-80 disabled:opacity-25; }
