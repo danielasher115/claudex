@@ -9,6 +9,7 @@ import { Select } from "./components/Select";
 import { Models } from "./components/Models";
 import { ActivityLine } from "./components/Activity";
 import { orderSessions } from "./sessionOrder";
+import { PlanUsage } from "./components/PlanUsage";
 
 function saved<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) ?? "null") ?? fallback; } catch { return fallback; }
@@ -130,6 +131,7 @@ export function App() {
         </>}
         {snapshot && !shown.length && <div className="px-4 py-8 text-center"><Search className="mx-auto mb-3 size-5 text-faint" /><p className="text-sm font-medium">No matching sessions</p><p className="mt-1 text-xs leading-relaxed text-faint">Try another search or change your filters.</p>{(query || status || workspace) && <button className="mt-3 text-xs underline underline-offset-4" onClick={clear}>Clear filters</button>}</div>}
       </nav>
+      <PlanUsage />
       <div className="sidebar-footer"><button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setDialog("setup")} title="Connection and Claude setup"><span className={`size-1.5 shrink-0 rounded-full ${snapshot?.connection.connected ? "bg-emerald-500" : "bg-amber-500"}`} /><div className="min-w-0"><div className="truncate text-xs font-medium">{snapshot?.connection.connected ? "Local Codex connected" : "Codex disconnected"}</div><div className="mt-0.5 truncate text-[10px] text-faint">Connection details</div></div></button><button className="icon-button" title="Models and Claude task tiers" aria-label="Models and Claude task tiers" onClick={() => setDialog("models")}><Cpu className="size-3.5" /></button><button className="icon-button" title="Keyboard shortcuts" aria-label="Keyboard shortcuts" onClick={() => setDialog("help")}><CircleHelp className="size-3.5" /></button><button className="icon-button" title="Connection and setup" aria-label="Connection and setup" onClick={() => setDialog("setup")}><Settings2 className="size-3.5" /></button></div>
     </aside>
     <main className="flex min-w-0 flex-1 flex-col">

@@ -26,6 +26,7 @@ from .thread_lifecycle import ThreadLifecycle
 from .session_details import SessionDetails
 from .changes import Changes
 from .background_shells import BackgroundShells
+from .account_usage import AccountUsage
 
 SOURCES = ["cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview", "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown"]
 
@@ -66,6 +67,7 @@ class Gateway:
         self.thread_lifecycle = ThreadLifecycle(self)
         self.file_links = FileLinks(self)
         self.models = Models(self)
+        self.account_usage = AccountUsage(self)
         self.details = SessionDetails(self)
         self.changes = Changes(self)
         self.background_shells = BackgroundShells(self)
@@ -81,6 +83,7 @@ class Gateway:
         self.thread_lifecycle.observe(message)
         self.protocol.turns.observe(message)
         self.details.observe(message)
+        self.account_usage.observe(message)
         self.changes.observe(message)
         self.activity.observe(message)
         self.reasoning.observe(message)
@@ -552,6 +555,7 @@ class Gateway:
                 job.cancel()
             if self.media_jobs:
                 await asyncio.gather(*list(self.media_jobs), return_exceptions=True)
+            await self.account_usage.close()
             await self.changes.close()
             await self.protocol.turns.close()
             await self.rpc.close()

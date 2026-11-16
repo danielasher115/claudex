@@ -18,6 +18,7 @@ from .gateway import Gateway
 from .rpc import RpcError
 from .file_links import FileLinkError
 from .context_usage import ContextUsage
+from .account_usage import AccountUsageError
 
 
 def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
@@ -38,6 +39,8 @@ def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
                 return JSONResponse({"default_cwd": str(Path.home()), "config": {"mcpServers": {"codex": {"type": "stdio", "command": sys.executable,
                     "args": ["-m", "codex_sessions", "mcp", "--data-dir", str(Path(data_dir).resolve())],
                     "env": {"PYTHONPATH": str(Path(__file__).resolve().parents[1])}}}}})
+            if path == "/api/account/usage":
+                return JSONResponse(await service.account_usage.get(refresh=request.query_params.get("refresh") == "1"))
             if path == "/api/models":
                 return JSONResponse(await service.models.get(refresh=request.query_params.get("refresh") == "1"))
             if request.method == "POST":
@@ -53,6 +56,8 @@ def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
                 body = json.loads(await request.body())
                 if not isinstance(body, dict):
                     raise ValueError("Expected a JSON object")
+                if path == "/api/account/usage/reset":
+                    return JSONResponse(await service.account_usage.consume(body))
                 if path == "/api/protocol":
                     if body.get("protocol_version") != "1":
                         raise ValueError("Unsupported protocol_version; expected '1'")
@@ -91,6 +96,8 @@ def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
                 return JSONResponse({"session": session, "history": history, "children": service.protocol.children(session_id),
                                      "context_usage": usage})
             return JSONResponse(await service.session(session_id))
+        except AccountUsageError as exc:
+            return JSONResponse({"error": str(exc)}, exc.status)
         except FileLinkError as exc:
             return JSONResponse({"error": str(exc)}, exc.status)
         except KeyError:
@@ -152,6 +159,7 @@ def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
     routes = [Route("/api/protocol", api, methods=["POST"]), Route("/api/artifacts", api, methods=["POST"]),
               Route("/api/artifacts/{artifact_id}/content", artifact_content), Route("/api/agents", api, methods=["POST"]),
               Route("/api/artifacts/{artifact_id}/preview", artifact_preview), Route("/api/artifacts/{artifact_id}/pages/{index}", artifact_page),
+              Route("/api/account/usage", api), Route("/api/account/usage/reset", api, methods=["POST"]),
               Route("/api/models", api), Route("/api/setup", api), Route("/api/sessions", api), Route("/api/sessions/{session_id}", api),
               Route("/api/sessions/{session_id}/view", api), Route("/api/sessions/{session_id}/details", api),
               Route("/api/sessions/{session_id}/background-shells", api),
