@@ -10,6 +10,7 @@ interface Usage {
   reset_credits: { available_count: number; credits: { id: string; title: string | null; expires_at: number | null }[] | null } | null;
 }
 const attemptKey = "codex-reset-attempt";
+const remainingPercent = (used: number) => Math.round(100 - Math.min(100, Math.max(0, used)));
 const outcomes: Record<string, string> = {
   reset: "Your eligible Codex usage limits were reset.", alreadyRedeemed: "This reset was already applied. Your usage is refreshed.",
   nothingToReset: "There are no eligible usage limits to reset right now.", noCredit: "No earned reset credits are available.",
@@ -71,7 +72,7 @@ export function PlanUsage() {
   const available = usage?.status === "available";
   const windows = available ? usage.limits.flatMap(limit => [limit.primary, limit.secondary].filter((window): window is Window => window !== null)) : [];
   const used = windows.length ? Math.min(100, Math.max(0, ...windows.map(window => window.used_percent))) : null;
-  const remaining = used === null ? null : Math.round(100 - used);
+  const remaining = used === null ? null : remainingPercent(used);
   const resets = available ? usage.reset_credits?.available_count : undefined;
   const summary = !usage ? "Checking usage" : !available ? "Usage unavailable" : remaining === null ? "Limits not reported" : `${remaining}% left`;
   const resetLabel = resets === undefined ? "Resets not reported" : `${resets} reset${resets === 1 ? "" : "s"} available`;
@@ -79,7 +80,7 @@ export function PlanUsage() {
   return <>
     <button type="button" className="mx-3 mb-2 flex shrink-0 items-center gap-2.5 rounded-xl border border-line px-3 py-2 text-left hover:bg-hover" aria-label={`Codex plan usage: ${remaining === null ? available ? "limits not reported" : usage ? "unavailable" : "loading" : `${remaining}% remaining`}`} onClick={() => setOpen(true)} title="Codex account usage and earned resets">
       <Gauge className={`size-4 shrink-0 ${used !== null && used >= 90 ? "text-amber-600 dark:text-amber-400" : "text-faint"}`} />
-      <div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2 text-[11px]"><span className="text-muted">Plan usage</span><span className="font-medium tabular-nums">{summary}</span></div><div className="mt-1 flex items-center gap-2"><span aria-hidden className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-line">{used !== null && <span className={`block h-full rounded-full ${used >= 90 ? "bg-amber-500" : "bg-faint"}`} style={{ width: `${used}%` }} />}</span><span className="shrink-0 text-[10px] text-faint">{resets && resets > 0 ? `${resets} reset${resets === 1 ? "" : "s"}` : "View limits"}</span></div></div><ChevronRight className="size-3 shrink-0 text-faint" />
+      <div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2 text-[11px]"><span className="text-muted">Plan usage</span><span className="font-medium tabular-nums">{summary}</span></div><div className="mt-1 flex items-center gap-2"><span aria-hidden className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-line">{used !== null && <span className={`block h-full rounded-full ${used >= 90 ? "bg-amber-500" : "bg-faint"}`} style={{ width: `${remaining}%` }} />}</span><span className="shrink-0 text-[10px] text-faint">{resets && resets > 0 ? `${resets} reset${resets === 1 ? "" : "s"}` : "View limits"}</span></div></div><ChevronRight className="size-3 shrink-0 text-faint" />
     </button>
     {open && <Dialog title={confirm ? "Use a rate-limit reset?" : "Codex plan usage"} subtitle={confirm ? undefined : `${planName(usage?.plan_type ?? null)} plan`} close={close} canClose={!busy} className="!max-w-md"><div className="space-y-5 p-6">
       {confirm ? <>
@@ -91,8 +92,8 @@ export function PlanUsage() {
         <div className="flex items-center justify-between"><span className="text-xs text-faint">Shared across your Codex sessions</span><button className="icon-button" aria-label="Refresh plan usage" disabled={refreshing} onClick={() => void refresh(true)}><RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} /></button></div>
         {!usage ? <Loading label="Checking plan usage" /> : !available ? <p role="status" className="text-sm text-muted">{usage.message ?? "Plan usage is unavailable for this account or runtime."}</p> : <>
           {usage.limits.map(limit => <section key={limit.id} className="space-y-4"><h3 className="text-sm font-medium">{limit.name}</h3>
-            {[limit.primary, limit.secondary].filter((window): window is Window => window !== null).map((window, index) => <div key={index}><div className="mb-2 flex items-center justify-between gap-2 text-xs"><span className="text-muted">{windowName(window.window_minutes)}</span><span className="font-medium tabular-nums">{Math.round(100 - Math.min(100, Math.max(0, window.used_percent)))}% remaining</span></div>
-              <div role="progressbar" aria-label={`${limit.name} ${windowName(window.window_minutes)}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, window.used_percent))} aria-valuetext={`${window.used_percent}% used`} className="h-1.5 overflow-hidden rounded-full bg-line"><div className={`h-full rounded-full ${window.used_percent >= 90 ? "bg-amber-500" : "bg-ink/70"}`} style={{ width: `${Math.min(100, Math.max(0, window.used_percent))}%` }} /></div>
+            {[limit.primary, limit.secondary].filter((window): window is Window => window !== null).map((window, index) => <div key={index}><div className="mb-2 flex items-center justify-between gap-2 text-xs"><span className="text-muted">{windowName(window.window_minutes)}</span><span className="font-medium tabular-nums">{remainingPercent(window.used_percent)}% remaining</span></div>
+              <div role="progressbar" aria-label={`${limit.name} ${windowName(window.window_minutes)}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={remainingPercent(window.used_percent)} aria-valuetext={`${remainingPercent(window.used_percent)}% remaining`} className="h-1.5 overflow-hidden rounded-full bg-line"><div className={`h-full rounded-full ${window.used_percent >= 90 ? "bg-amber-500" : "bg-ink/70"}`} style={{ width: `${remainingPercent(window.used_percent)}%` }} /></div>
               <p className="mt-2 text-[11px] text-faint">{window.resets_at === null ? "Reset time not reported" : window.resets_at * 1000 <= Date.now() ? `Reset was due ${date(window.resets_at)}. Refresh for current usage.` : `Resets ${date(window.resets_at)}`}</p></div>)}
             {limit.credits && <p className="text-xs text-faint">{limit.credits.unlimited ? "Unlimited credits" : limit.credits.balance !== null ? `${limit.credits.balance} credits remaining` : limit.credits.has_credits ? "Additional credits available" : "No additional credits available"}</p>}
           </section>)}

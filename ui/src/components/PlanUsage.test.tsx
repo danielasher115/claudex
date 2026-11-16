@@ -17,9 +17,14 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 test("shows the actual remaining allowance and earned resets without spending one", async () => {
   render(<PlanUsage />);
-  fireEvent.click(await screen.findByRole("button", { name: /Codex plan usage: 30% remaining/ }));
+  const indicator = await screen.findByRole("button", { name: /Codex plan usage: 30% remaining/ });
+  expect(indicator.querySelector<HTMLElement>("[aria-hidden] > span")?.style.width).toBe("30%");
+  fireEvent.click(indicator);
   expect(await screen.findByText("Weekly allowance")).toBeTruthy();
-  expect(screen.getByRole("progressbar", { name: "Codex Weekly allowance" }).getAttribute("aria-valuenow")).toBe("70");
+  const bar = screen.getByRole("progressbar", { name: "Codex Weekly allowance" });
+  expect(bar.getAttribute("aria-valuenow")).toBe("30");
+  expect(bar.getAttribute("aria-valuetext")).toBe("30% remaining");
+  expect((bar.firstElementChild as HTMLElement).style.width).toBe("30%");
   expect(screen.getByText("1 reset available")).toBeTruthy();
   expect(request.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
 });
