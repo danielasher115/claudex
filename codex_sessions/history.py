@@ -17,7 +17,13 @@ class History:
         db = max(candidates, key=lambda path: (int(path.stem.split("_")[1]), path.parent == self.home / "sqlite"))
         with closing(sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
             conn.row_factory = sqlite3.Row
-            return [dict(r) for r in conn.execute("SELECT * FROM threads ORDER BY updated_at DESC")]
+            rows = [dict(r) for r in conn.execute("SELECT * FROM threads ORDER BY updated_at DESC")]
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_spawn_edges'").fetchone():
+                parents = dict(conn.execute("SELECT child_thread_id,parent_thread_id FROM thread_spawn_edges"))
+                for row in rows:
+                    if row["id"] in parents:
+                        row["native_parent_id"] = parents[row["id"]]
+            return rows
 
     def find(self, session_id):
         row = next((s for s in self.sessions() if s["id"] == session_id), None)

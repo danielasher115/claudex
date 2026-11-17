@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Brain, Check, ChevronRight, ClipboardList, Clock3, FileText, GitBranch, Globe, Image as ImageIcon, Layers, Search, ShieldCheck } from "lucide-react";
-import { reasoningOf, textOf, type Artifact, type Item } from "../api";
+import { reasoningOf, textOf, type Artifact, type Child, type Item } from "../api";
 import { AttachmentList } from "./Attachments";
 import { CopyButton } from "./shared";
 
@@ -18,7 +18,7 @@ function Notice({ icon: Icon, children }: { icon: typeof Clock3; children: React
   return <div className="my-4 flex items-center gap-2 text-xs text-faint"><Icon className="size-3.5 shrink-0" /><span>{children}</span></div>;
 }
 
-export function CodexItem({ item, record, matched, expanded, select, live = false }: { item: Item; record: Record<string, unknown>; matched: boolean; expanded?: boolean; select?: (id: string) => void; live?: boolean }) {
+export function CodexItem({ item, record, matched, expanded, select, agents: children = [], live = false }: { item: Item; record: Record<string, unknown>; matched: boolean; expanded?: boolean; select?: (id: string) => void; agents?: Child[]; live?: boolean }) {
   const type = String(record.type);
   const [open, setOpen] = useState(false);
   const manual = useRef(false);
@@ -52,12 +52,14 @@ export function CodexItem({ item, record, matched, expanded, select, live = fals
       const title = action.type === "openPage" ? "Opened web page" : action.type === "findInPage" ? "Searched within page" : "Searched the web";
       body = <details open={open} onToggle={event => { if (event.currentTarget.open !== open) { manual.current = true; setOpen(event.currentTarget.open); } }} className="tool-card border-line"><summary className="flex items-center gap-2 px-3 py-2 text-xs text-muted"><Globe className="size-4 shrink-0" /><span className="shrink-0 font-medium">{title}</span><span className="min-w-0 truncate text-faint">{String(record.query || action.query || action.url || action.pattern || "")}</span></summary><div className="space-y-3 border-t border-line p-3">{urlOf(action.url) && <a className="block break-all text-xs underline" target="_blank" rel="noreferrer" href={urlOf(action.url)!}>{String(action.url)}</a>}{Boolean(record.query) && <p className="text-xs">{String(record.query)}</p>}{Array.isArray(record.results) && record.results.map((result, index) => { const value = result && typeof result === "object" ? result as Record<string, unknown> : {}; const url = urlOf(value.url ?? value.link); return <div key={index} className="text-xs">{url ? <><a href={url} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2">{String(value.title || url)}</a>{Boolean(value.snippet) && <p className="mt-1 text-faint">{String(value.snippet)}</p>}</> : <pre className="tool-output">{JSON.stringify(result, null, 2)}</pre>}</div>; })}</div></details>; break;
     }
-    case "subAgentActivity":
-      body = <Notice icon={GitBranch}><button className="font-medium hover:underline" onClick={() => select?.(String(record.agentThreadId))}>{String(record.agentPath)}</button> {String(record.kind)}{record.model ? <span className="ml-2 text-[10px]">{String(record.model)} · {String(record.reasoningEffort ?? "")}</span> : null}</Notice>; break;
+    case "subAgentActivity": {
+      const child = children.find(child => child.thread_id === record.agentThreadId) ?? children.find(child => child.agent_path && child.agent_path === record.agentPath);
+      body = <Notice icon={GitBranch}><button className="font-medium hover:underline" onClick={() => select?.(child?.thread_id ?? String(record.agentThreadId))}>{child?.name || String(record.agentPath || record.agentThreadId || "Subagent")}</button> {String(record.kind)}{record.model ? <span className="ml-2 text-[10px]">{String(record.model)} · {String(record.reasoningEffort ?? "")}</span> : null}</Notice>; break;
+    }
     case "collabAgentToolCall": {
       const agents = record.agentsStates && typeof record.agentsStates === "object" ? record.agentsStates as Record<string, { status?: string; message?: string }> : {};
       const receivers = Array.isArray(record.receiverThreadIds) ? record.receiverThreadIds as string[] : Object.keys(agents);
-      body = <details open={open} onToggle={event => { if (event.currentTarget.open !== open) { manual.current = true; setOpen(event.currentTarget.open); } }} className="tool-card border-line"><summary className="flex items-center gap-2 px-3 py-2 text-xs text-muted"><GitBranch className="size-4" /><span className="font-medium">{String(record.tool ?? "Subagent")}</span><span className="ml-auto text-faint">{String(record.status ?? "")}</span></summary><div className="space-y-3 border-t border-line p-3">{Boolean(record.prompt) && <Body text={String(record.prompt)} />}{receivers.map(id => <div key={id} className="rounded-lg bg-code p-3 text-xs"><button className="font-mono text-[11px] hover:underline" onClick={() => select?.(id)}>Open agent {id.slice(0, 12)}</button><span className="ml-3 text-faint">{agents[id]?.status ?? "Unknown state"}</span>{agents[id]?.message && <p className="mt-2 whitespace-pre-wrap text-faint">{agents[id].message}</p>}</div>)}</div></details>; break;
+      body = <details open={open} onToggle={event => { if (event.currentTarget.open !== open) { manual.current = true; setOpen(event.currentTarget.open); } }} className="tool-card border-line"><summary className="flex items-center gap-2 px-3 py-2 text-xs text-muted"><GitBranch className="size-4" /><span className="font-medium">{String(record.tool ?? "Subagent")}</span><span className="ml-auto text-faint">{String(record.status ?? "")}</span></summary><div className="space-y-3 border-t border-line p-3">{Boolean(record.prompt) && <Body text={String(record.prompt)} />}{receivers.map(id => <div key={id} className="rounded-lg bg-code p-3 text-xs"><button className="font-mono text-[11px] hover:underline" onClick={() => select?.(id)}>{children.find(child => child.thread_id === id)?.name || `Open agent ${id.slice(0, 12)}`}</button><span className="ml-3 text-faint">{agents[id]?.status ?? children.find(child => child.thread_id === id)?.status ?? "Unknown state"}</span>{agents[id]?.message && <p className="mt-2 whitespace-pre-wrap text-faint">{agents[id].message}</p>}</div>)}</div></details>; break;
     }
     case "hookPrompt":
       body = <details open={open} onToggle={event => { if (event.currentTarget.open !== open) { manual.current = true; setOpen(event.currentTarget.open); } }} className="my-3 rounded-lg border border-line bg-code px-3 py-2 text-xs text-faint"><summary className="flex items-center gap-2"><FileText className="size-3.5" />Hook context</summary><div className="mt-3"><Body text={textOf(record.fragments)} /></div></details>; break;

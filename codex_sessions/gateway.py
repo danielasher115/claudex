@@ -27,6 +27,7 @@ from .session_details import SessionDetails
 from .changes import Changes
 from .background_shells import BackgroundShells
 from .account_usage import AccountUsage
+from . import agent_hierarchy
 
 SOURCES = ["cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview", "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown"]
 
@@ -187,6 +188,8 @@ class Gateway:
                 agent = agent_rows[session_id]
                 row = {"cwd": agent["cwd"], "title": agent["name"], "created_at": agent["created_at"], "updated_at": agent["created_at"]}
                 status = self.thread_lifecycle.missing(agent)[0] if online else "unavailable"
+            elif session_id in agent_rows and status != "unavailable":
+                self.thread_lifecycle.available(agent_rows[session_id])
             if online and status in ("idle", "notLoaded") and session_id in agent_rows and not agent_rows[session_id]["turn_id"] and self.thread_lifecycle.failure(session_id):
                 status = "failed"
             external = status in ("notLoaded", "unavailable") and row.get("source") == "mcp" and self.history.external_busy(row)
@@ -211,14 +214,14 @@ class Gateway:
                 "activity": self.activity.snapshot(session_id, status, thread.get("status", {}).get("activeFlags", [])),
             })
         sessions.sort(key=lambda s: (s["status"] == "active", s["updated_at"]), reverse=True)
-        agents = {r["session_id"]: dict(r) for r in self.db.execute("SELECT session_id,parent_id,name,depth,sandbox FROM agents")}
-        for session in sessions:
-            if session["id"] in agents:
-                agent = agents[session["id"]]
-                session.update({"title": agent["name"], "parent_id": agent["parent_id"], "depth": agent["depth"], "sandbox": agent["sandbox"], "source": "agents"})
+        metadata = {identity: {**live.get(identity, {}), **rows.get(identity, {})} for identity in rows.keys() | live.keys()}
+        agent_hierarchy.enrich(sessions, metadata, agent_rows)
         self.cached = {"sessions": sessions, "connection": {"connected": self.rpc.ws is not None and not self.rpc.error, "error": self.rpc.error, "home": str(self.home), "socket": str(self.rpc.socket)}}
         self.cache_at = time.monotonic()
         return self.cached
+
+    def display_children(self, session_id):
+        return agent_hierarchy.descendants(self.cached["sessions"] if self.cached else [], session_id)
 
     async def session(self, session_id, fresh=False):
         result = await self.sessions(fresh)

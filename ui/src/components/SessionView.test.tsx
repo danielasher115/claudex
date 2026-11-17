@@ -1,11 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { Item, Session } from "../api";
+import type { Child, Item, Session } from "../api";
 import { SessionView } from "./SessionView";
 
 vi.mock("./BackgroundShells", () => ({ BackgroundShells: () => null }));
 let session: Session;
 let items: Item[];
+let children: Child[];
 let contextUsage: unknown;
 let request: ReturnType<typeof vi.fn>;
 const response = (data: unknown) => new Response(JSON.stringify(data), { status: 200 });
@@ -14,13 +15,13 @@ const props = { id: "a", onChange: vi.fn(), pinned: false, togglePin: vi.fn() };
 beforeEach(() => {
   localStorage.clear();
   session = { id: "a", title: "Composer controls", preview: "", cwd: "/repo", model: "codex", source: "codex", origin: "codex", status: "idle", flags: [], created_at: 1, updated_at: 1, archived: false, can_send: true, reason: null, messages: [] };
-  items = []; contextUsage = null;
+  items = []; children = []; contextUsage = null;
   HTMLElement.prototype.showPopover = vi.fn();
   HTMLElement.prototype.hidePopover = vi.fn();
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
   request = vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.endsWith("/view")) return response({ session, history: { items, next_cursor: null, source: "codex", warning: null }, context_usage: contextUsage });
+    if (url.endsWith("/view")) return response({ session, history: { items, next_cursor: null, source: "codex", warning: null }, children, context_usage: contextUsage });
     if (init?.method === "POST") return response({ id: "sent", text: "Continue", mode: JSON.parse(String(init.body)).mode, status: "queued", created_at: 1 });
     return response({ status: "available", processes: [] });
   });
@@ -123,4 +124,40 @@ test("inspecting a tool prevents incoming updates from snapping the conversation
   view.rerender(<SessionView {...props} summary={{ ...session, revision: "two" }} />);
   await screen.findByText("A later update");
   expect(scroller.scrollTop).toBe(800);
+});
+
+
+test("subagents nest under their direct parent and event links use matching names", async () => {
+  session = { ...session, parent_id: "direct-parent", root_id: "top-parent", depth: 1 };
+  children = [
+    { thread_id: "grandchild", parent_id: "child", name: "Verify parser", depth: 3, cwd: "/repo", status: "idle", model: "codex", origin: "native" },
+    { thread_id: "child", parent_id: "a", name: "Inspect parser", depth: 2, cwd: "/repo", status: "active", model: "codex", origin: "gateway", agent_path: "/root/parser" },
+    { thread_id: "sibling", parent_id: "a", name: "Review API", depth: 2, cwd: "/repo", status: "idle", origin: "native" },
+  ];
+  items = [
+    { id: "spawn", type: "collabAgentToolCall", tool: "spawn_agent", status: "completed", receiverThreadIds: ["grandchild"] },
+    { id: "activity", type: "subAgentActivity", agentThreadId: "child", agentPath: "/root/parser", kind: "started" },
+  ];
+  const select = vi.fn();
+  render(<SessionView {...props} select={select} />);
+  const tree = await screen.findByRole("list", { name: "Subagents" });
+  expect(tree.children).toHaveLength(2);
+  const nested = within(tree).getByRole("list", { name: "Subagents of Inspect parser" });
+  expect(within(nested).getByRole("button", { name: "Open chat for Verify parser" })).toBeTruthy();
+  expect(within(nested).getByText("Idle")).toBeTruthy();
+  expect(within(nested).getByText("codex")).toBeTruthy();
+  fireEvent.click(within(tree).getByRole("button", { name: "Subagents of Inspect parser" }));
+  expect(within(tree).queryByText("Verify parser")).toBeNull();
+  fireEvent.click(within(tree).getByRole("button", { name: "Subagents of Inspect parser" }));
+  fireEvent.click(within(tree).getByRole("button", { name: "Open chat for Verify parser" }));
+  expect(select).toHaveBeenLastCalledWith("grandchild");
+  fireEvent.click(screen.getByRole("button", { name: "Back to parent" }));
+  expect(select).toHaveBeenLastCalledWith("direct-parent");
+  fireEvent.click(screen.getByRole("button", { name: "Expand tools" }));
+  const eventLink = await screen.findByRole("button", { name: "Verify parser" });
+  fireEvent.click(eventLink);
+  expect(select).toHaveBeenLastCalledWith("grandchild");
+  const activity = document.querySelector('[data-codex-type="subAgentActivity"]') as HTMLElement;
+  fireEvent.click(within(activity).getByRole("button", { name: "Inspect parser" }));
+  expect(select).toHaveBeenLastCalledWith("child");
 });

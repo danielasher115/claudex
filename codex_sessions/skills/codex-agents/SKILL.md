@@ -13,6 +13,9 @@ receipts; the parent may continue working while delegated tasks run. Use the das
 Call `models_list` to see the runtime's actual model IDs, supported efforts and approximate Claude task tiers. The default coding
 model is the latest advertised workhorse, currently `gpt-6.1-sol`; the gateway's default effort is **high**.
 `sonnet`, `opus`, `fable` and `haiku` are convenience task-tier aliases for OpenAI models, not Claude execution or measured equivalence.
+At maximum Codex reasoning effort, use Astra for Fable / Opus-style work and Sol for Opus / Sonnet-style work.
+Select the highest supported native effort from `models_list` for these comparisons, such as `xhigh`; use `max` only if advertised.
+The aliases remain unambiguous: `opus` and `fable` select Astra, `sonnet` selects the latest workhorse, and `haiku` selects Luna.
 Preserve an explicit user model or effort choice. Choose the smallest sandbox that permits the requested work.
 
 Use `agents_launch` for asynchronous work. The launch fields are `prompt`, `cwd`, `name`, `sandbox`, `model`, `effort`,

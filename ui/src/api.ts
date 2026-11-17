@@ -7,13 +7,14 @@ export interface Session {
   can_send: boolean; reason: string | null; active_turn_id?: string | null; messages?: Delivery[];
   can_steer_queued?: boolean;
   revision?: string; tokens?: number;
-  parent_id?: string | null; depth?: number; sandbox?: string;
+  parent_id?: string | null; root_id?: string | null; depth?: number; sandbox?: string;
+  agent_origin?: "native" | "gateway"; agent_path?: string;
   inherited_context?: { provider: string; instruction_files: number; memory_files: number; skills: number; has_session_summary: boolean; settings: string[]; unsupported_settings: string[]; warnings: string[]; sources: string[] };
   activity?: AgentActivity;
 }
 export interface AgentActivity { phase: string; label: string; detail: string; turn_id: string | null; turn_started_at: number | null; phase_started_at: number; last_event_at: number | null; last_update: string; source: string; tool_count: number }
 export interface Artifact { id: string; name: string; mime: string; kind: string; size: number; characters: number; pages: number | null; image_count: number; status: string; content_url: string; summary?: string; source_path?: string }
-export interface Child { thread_id: string; parent_id: string; name: string; depth: number; cwd: string }
+export interface Child { thread_id: string; parent_id: string; name: string; depth: number; cwd: string; status?: string; model?: string; origin?: "native" | "gateway"; agent_path?: string }
 export interface Snapshot {
   sessions: Session[];
   connection: { connected: boolean; error: string | null; home: string; socket: string };

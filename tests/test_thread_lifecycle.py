@@ -2,6 +2,8 @@ import asyncio
 import json
 import time
 
+import pytest
+
 from test_smoke import message, service
 from codex_sessions.rpc import RpcError
 
@@ -44,6 +46,62 @@ def test_missing_old_start_is_failed_but_recent_and_offline_are_not(tmp_path):
         assert next(r for r in (await instance.sessions(fresh=True))['sessions'] if r['id'] == 'recent')['status'] == 'unavailable'
         result = await instance.protocol.result('old')
         assert result['status'] == 'failed'
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize('evidence', ['history', 'discovery', 'loaded'])
+def test_accepted_agent_recovers_when_native_history_returns(tmp_path, evidence):
+    async def check():
+        instance = service(tmp_path)
+        owned(instance, 'restored')
+        instance.db.execute("INSERT INTO launch_requests VALUES ('launch', 'fingerprint', 'restored', 'running')")
+        instance.db.commit()
+        assert (await instance.session('restored'))['status'] == 'failed'
+        assert instance.db.execute("SELECT state FROM launch_requests").fetchone()[0] == 'failed'
+        original = instance.rpc.call
+        answer = {'id': 'answer', 'type': 'agentMessage', 'phase': 'final_answer', 'text': 'Recovered answer'}
+        async def call(method, params=None):
+            if method == 'thread/list' and evidence == 'discovery':
+                return {'data': [{'id': 'restored', 'cwd': '/test'}]}
+            if method == 'thread/turns/list':
+                return {'data': [{'id': 'original', 'status': 'completed', 'items': [answer]}]}
+            if method == 'thread/items/list':
+                return {'data': [{'item': answer}]}
+            return await original(method, params)
+        instance.rpc.call = call
+        if evidence == 'history':
+            instance.history.sessions = lambda: [{'id': 'restored', 'source': 'appServer', 'cwd': '/test'}]
+        elif evidence == 'discovery':
+            instance.discovery_at = 0
+        else:
+            instance.rpc.sessions['restored'] = 'idle'
+        result = await instance.protocol.result('restored', turn_id='original')
+        assert result['status'] == 'completed'
+        assert result['report'] == 'Recovered answer'
+        assert not instance.thread_lifecycle.failure('restored')
+        assert instance.db.execute("SELECT state FROM launch_requests").fetchone()[0] == 'running'
+        state = await instance.session('restored')
+        assert state['status'] == ('idle' if evidence == 'loaded' else 'saved')
+        assert state['can_send']
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize('turn,error', [
+    (None, 'Agent never became available in daemon history or loaded threads before its startup deadline.'),
+    (None, 'Agent never started a turn before its startup deadline.'),
+    ('original', 'Agent launch failed: Invalid model request'),
+])
+def test_native_history_does_not_erase_unaccepted_or_definite_launch_failure(tmp_path, turn, error):
+    async def check():
+        instance = service(tmp_path)
+        owned(instance, turn=turn)
+        instance.db.execute("INSERT INTO launch_requests VALUES ('launch', 'fingerprint', 'a', 'unconfirmed')")
+        instance.thread_lifecycle.fail('a', error)
+        result = await instance.protocol.result('a')
+        assert result['status'] == 'failed'
+        assert result['error'] == error
+        assert instance.thread_lifecycle.failure('a') == error
+        assert instance.db.execute("SELECT state FROM launch_requests").fetchone()[0] == 'failed'
     asyncio.run(check())
 
 

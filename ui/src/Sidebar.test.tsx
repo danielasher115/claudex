@@ -106,3 +106,33 @@ test("running rows move only when a new run starts, and finished rows move below
   publish();
   expect(titles()).toEqual(["Run middle", "Run active", "Run newest", "Run history"]);
 });
+
+test("nested agents stay in their root chat while pins, search, status and missing roots remain discoverable", () => {
+  const root = sessions[0];
+  sessions = [root,
+    { ...root, id: "child", title: "Run child", parent_id: root.id, depth: 1, cwd: "/repos/child", status: "idle" },
+    { ...root, id: "grandchild", title: "Run grandchild", parent_id: "child", root_id: root.id, depth: 2 },
+    { ...root, id: "pinned-child", title: "Run pinned child", parent_id: root.id, root_id: root.id, depth: 1 },
+    { ...root, id: "orphan", title: "Run orphan", parent_id: "missing", root_id: "missing", depth: 1 }];
+  localStorage.setItem("session-pins", JSON.stringify(["pinned-child"]));
+  render(<App />); publish();
+  expect(new Set(titles())).toEqual(new Set(["Run pinned child", "Run active", "Run orphan"]));
+  const main = within(screen.getByRole("main"));
+  expect(main.queryByText("Run child")).toBeNull();
+  expect(main.queryByText("Run grandchild")).toBeNull();
+  fireEvent.change(screen.getByRole("textbox", { name: "Search sessions" }), { target: { value: "grandchild" } });
+  expect(titles()).toEqual(["Run grandchild"]);
+  fireEvent.change(screen.getByRole("textbox", { name: "Search sessions" }), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Session filters" }));
+  fireEvent.click(screen.getByRole("combobox", { name: "Filter by status" }));
+  fireEvent.click(screen.getByRole("option", { name: "Working", hidden: true }));
+  expect(titles()).toContain("Run grandchild");
+  fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+  fireEvent.click(screen.getByRole("combobox", { name: "Filter by project" }));
+  fireEvent.click(screen.getByRole("option", { name: "child", hidden: true }));
+  expect(titles()).toEqual(["Run child"]);
+  fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+  sessions = sessions.filter(session => session.id !== root.id); publish();
+  expect(titles()).toContain("Run child");
+  expect(titles()).toContain("Run grandchild");
+});

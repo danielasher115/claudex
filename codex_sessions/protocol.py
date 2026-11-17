@@ -246,6 +246,9 @@ class Protocol:
         request = json.loads(agent["request_json"]) if agent else {}
         inheritance = report_request(request) if agent else report_context({})
         failure = self.service.thread_lifecycle.failure(session_id)
+        if failure and agent and agent["turn_id"]:
+            await self.service.session(session_id, fresh=True)
+            failure = self.service.thread_lifecycle.failure(session_id)
         if failure:
             return {"thread_id": session_id, "status": "failed", "error": failure, "report": "", "children": self.children(session_id), "inherited_context": inheritance}
         if not agent:

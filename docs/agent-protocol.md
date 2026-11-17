@@ -71,8 +71,12 @@ same-origin endpoints and do not receive the protocol token. Keep tokens out of 
 ## Model selection
 
 `models.list` reads the catalog exposed by your connected runtime. Exact advertised model IDs work. Claude-oriented task aliases
-such as `sonnet`, `opus`, and `haiku` choose approximate Codex task roles; they do not execute Claude models or imply benchmark equivalence.
+such as `sonnet`, `opus`, `fable`, and `haiku` choose approximate Codex task roles; they do not execute Claude models or imply benchmark equivalence.
 The model picker shows the current mapping. An explicit request takes precedence over defaults, and existing chats retain their model.
+
+At maximum Codex reasoning effort, Astra fills Fable / Opus-style roles and Sol fills Opus / Sonnet-style roles.
+For these comparisons, select the highest supported native effort advertised by `models.list`, such as `xhigh`; use `max` only if advertised.
+Aliases remain `opus` / `fable` for Astra, `sonnet` for the latest workhorse, and `haiku` for Luna.
 
 The gateway defaults to high reasoning effort when the model supports it. Explicit per-task and compatible inherited preferences
 are preserved. Supported efforts and modalities come from the live runtime.
@@ -225,6 +229,11 @@ attachment and context bundle; sandbox authority and workspace remain constraine
 
 `max_depth` counts further permitted delegation generations. A child can request zero to become a leaf. `max_children` limits the total
 number of gateway children its parent can launch. These are gateway delegation limits.
+
+The dashboard combines gateway parent records with native Codex spawn metadata to display a nested subagent tree in the parent chat.
+Children remain individually inspectable, with navigation to their direct parent. Root lists omit known descendants unless pinned,
+searched, filtered by status, or their root is outside the current view. This display hierarchy does not extend gateway control rights:
+`agents.children`, delegated control authorization and recursive stopping continue to use gateway-owned delegation records.
 
 `agents.stop` interrupts the exact active turn, then stops gateway descendants and removes queued follow-ups. A stopped parent cannot
 launch more gateway children until explicitly continued. `agents.cancel` targets a specific message or turn, protecting newer work.

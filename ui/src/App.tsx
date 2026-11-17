@@ -65,8 +65,23 @@ export function App() {
   const sessions = snapshot?.sessions ?? [];
   const shown = useMemo(() => {
     const text = query.trim().toLowerCase();
-    return sessions.filter(s => s.archived === archived && (source === "all" || s.source === source || source === "claude" && s.source === "agents") && (!status || s.status === status) && (!workspace || s.cwd === workspace) && [s.title, s.preview, s.cwd, s.model, s.id].some(v => v.toLowerCase().includes(text)));
-  }, [sessions, query, source, status, workspace, archived]);
+    const matching = sessions.filter(s => s.archived === archived && (source === "all" || s.source === source || source === "claude" && s.source === "agents") && (!status || s.status === status) && (!workspace || s.cwd === workspace) && [s.title, s.preview, s.cwd, s.model, s.id].some(v => v.toLowerCase().includes(text)));
+    if (text || status) return matching;
+    const visibleIds = new Set(matching.map(session => session.id));
+    const byId = new Map(sessions.map(session => [session.id, session]));
+    return matching.filter(session => {
+      if (!session.parent_id || pins.includes(session.id)) return true;
+      if (session.root_id && session.root_id !== session.id) return !visibleIds.has(session.root_id);
+      const visited = new Set([session.id]);
+      let root = session;
+      while (root.parent_id) {
+        const parent = byId.get(root.parent_id);
+        if (!parent || visited.has(parent.id)) return true;
+        visited.add(parent.id); root = parent;
+      }
+      return !visibleIds.has(root.id);
+    });
+  }, [sessions, query, source, status, workspace, archived, pins]);
   const navigation = shown;
   const projects = useMemo(() => [...new Set(sessions.filter(s => s.archived === archived && (source === "all" || s.source === source || source === "claude" && s.source === "agents")).map(s => s.cwd))].sort(), [sessions, source, archived]);
   const groups = useMemo(() => {

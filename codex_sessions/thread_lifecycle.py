@@ -5,6 +5,8 @@ import time
 from .rpc import RpcError
 
 STARTUP_TIMEOUT = 120
+MISSING_HISTORY_ERROR = 'Agent never became available in daemon history or loaded threads before its startup deadline.'
+MISSING_TURN_ERROR = 'Agent never started a turn before its startup deadline.'
 log = logging.getLogger(__name__)
 
 
@@ -35,9 +37,19 @@ class ThreadLifecycle:
     def missing(self, agent):
         error = self.failure(agent['session_id'])
         if not error and time.time() - agent['created_at'] >= STARTUP_TIMEOUT:
-            error = 'Agent never became available in daemon history or loaded threads before its startup deadline.'
+            error = MISSING_HISTORY_ERROR
             self.fail(agent['session_id'], error)
         return ('failed', error) if error else ('starting', None)
+
+    def available(self, agent):
+        sid = agent['session_id']
+        if not agent['turn_id'] or self.failure(sid) not in (MISSING_HISTORY_ERROR, MISSING_TURN_ERROR):
+            return
+        self.service.db.execute('DELETE FROM agent_failures WHERE session_id=?', (sid,))
+        self.service.db.execute("UPDATE launch_requests SET state='running' WHERE session_id=?", (sid,))
+        self.service.db.commit()
+        self.service.changed(sid)
+        self.wake.set()
 
     def acquired(self, session_id):
         self.released.discard(session_id)
@@ -63,7 +75,7 @@ class ThreadLifecycle:
             self.service.db.execute("UPDATE launch_requests SET state='running' WHERE session_id=?", (sid,))
             self.service.db.commit()
         else:
-            self.fail(sid, 'Agent never started a turn before its startup deadline.')
+            self.fail(sid, MISSING_TURN_ERROR)
 
     async def release(self, sid, agent, loaded):
         service = self.service

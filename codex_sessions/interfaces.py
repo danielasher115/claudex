@@ -7,7 +7,7 @@ PROPERTIES = {
     "name": {"type": "string"}, "cwd": {"type": "string"}, "model": {"type": "string", "description": "Exact ID from models_list, or a task-tier alias: sonnet, opus, haiku, fable. Aliases select OpenAI models, not Claude. Omit for the latest available coding workhorse."},
     "sandbox": {"type": "string", "enum": ["read-only", "workspace-write", "danger-full-access"]},
     "approval-policy": {"type": "string"}, "developer-instructions": {"type": "string"}, "base-instructions": {"type": "string"},
-    "config": {"type": "object"}, "effort": {"type": "string", "description": "Defaults to high. Use a supported effort from models_list when overriding; children inherit an explicit parent effort."}, "output_schema": {"type": "object"},
+    "config": {"type": "object"}, "effort": {"type": "string", "description": "Defaults to high. The Astra Fable/Opus and Sol Opus/Sonnet role comparisons assume the highest supported effort from models_list. Use an advertised native effort when overriding; children inherit an explicit parent effort."}, "output_schema": {"type": "object"},
     "attachments": {"type": "array", "items": {"type": "string"}, "description": "Artifact IDs returned by artifacts_put; all are supplied before generation."},
     "files": {"type": "array", "items": {"type": "string"}, "description": "MCP/CLI only: local file paths to upload and prepare."},
     "parent_id": {"type": "string"}, "request_id": {"type": "string", "description": "UUID used to deduplicate a retried request."},

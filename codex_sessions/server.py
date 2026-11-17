@@ -93,7 +93,7 @@ def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
                 history = await service.page(session_id, compact=True)
                 session = await service.session(session_id)
                 usage = await asyncio.to_thread(context_usage.get, session_id)
-                return JSONResponse({"session": session, "history": history, "children": service.protocol.children(session_id),
+                return JSONResponse({"session": session, "history": history, "children": service.display_children(session_id),
                                      "context_usage": usage})
             return JSONResponse(await service.session(session_id))
         except AccountUsageError as exc:

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
-import { reasoningOf, type Item, type Session } from "../api";
+import { reasoningOf, type Child, type Item, type Session } from "../api";
 import { groupTranscript, isFinal, itemRecord, itemTime, workDuration, type WorkBlock } from "../timeline";
 import { exactTime, timeSeparator, timestamp } from "../time";
 import { ConversationItem } from "./Conversation";
@@ -58,10 +58,10 @@ function Thinking({ label }: { label: string }) {
   return <div role="status" className="desktop-thinking"><span className="thinking-shimmer">{label}</span></div>;
 }
 
-interface WorkProps { block: WorkBlock; expanded?: boolean; matchedIds?: Set<string>; select?: (id: string) => void; session?: Session | null }
+interface WorkProps { block: WorkBlock; expanded?: boolean; matchedIds?: Set<string>; select?: (id: string) => void; session?: Session | null; agents?: Child[] }
 
 function Work(props: WorkProps) {
-  const { block, expanded, matchedIds, select, session } = props;
+  const { block, expanded, matchedIds, select, session, agents } = props;
   const groups: { reasoning: boolean; items: Item[] }[] = [];
   for (const item of block.items) {
     const reasoning = itemRecord(item).type === "reasoning";
@@ -73,10 +73,10 @@ function Work(props: WorkProps) {
   const currentReasoning = last && itemRecord(last).type === "reasoning" ? reasoningOf(itemRecord(last)) : null;
   const waiting = session?.activity?.turn_id === block.turnId && session.activity.phase.startsWith("waiting_");
   const thinking = block.active && !block.items.some(runningItem) && (waiting || !currentReasoning?.heading && !currentReasoning?.content);
-  return <>{groups.map(group => group.reasoning ? group.items.map(item => <ConversationItem key={item.id} sessionId={session?.id} item={item} expanded={expanded} matched={matchedIds?.has(item.id)} select={select} />) : <ToolWork {...props} key={group.items[0].id} block={{ ...block, items: group.items, active: block.active && group.items.some(runningItem) }} />)}{thinking && <Thinking label={liveLabel(block, session)} />}</>;
+  return <>{groups.map(group => group.reasoning ? group.items.map(item => <ConversationItem key={item.id} sessionId={session?.id} item={item} expanded={expanded} matched={matchedIds?.has(item.id)} select={select} agents={agents} />) : <ToolWork {...props} key={group.items[0].id} block={{ ...block, items: group.items, active: block.active && group.items.some(runningItem) }} />)}{thinking && <Thinking label={liveLabel(block, session)} />}</>;
 }
 
-function ToolWork({ block, expanded, matchedIds, select, session }: WorkProps) {
+function ToolWork({ block, expanded, matchedIds, select, session, agents }: WorkProps) {
   const [choice, setChoice] = useState(false);
   useEffect(() => { if (expanded !== undefined) setChoice(expanded); }, [expanded]);
   const matched = block.items.some(item => matchedIds?.has(item.id));
@@ -85,15 +85,15 @@ function ToolWork({ block, expanded, matchedIds, select, session }: WorkProps) {
   const only = activities.length === 1 ? itemRecord(activities[0]) : null;
   const running = only && ["inProgress", "running"].includes(String(only.status));
   const multiPatch = only?.type === "fileChange" && Array.isArray(only.changes) && only.changes.length !== 1;
-  if (!block.active && only && !running && !multiPatch) return <div className="desktop-tool" data-work-turn={block.turnId}><ConversationItem sessionId={session?.id} item={activities[0]} expanded={expanded} matched={matchedIds?.has(activities[0].id)} select={select} compact /></div>;
+  if (!block.active && only && !running && !multiPatch) return <div className="desktop-tool" data-work-turn={block.turnId}><ConversationItem sessionId={session?.id} item={activities[0]} expanded={expanded} matched={matchedIds?.has(activities[0].id)} select={select} agents={agents} compact /></div>;
   const label = block.active ? liveLabel(block, session) : summary(activities);
   return <section className="worklog" data-work-turn={block.turnId} aria-label="Agent work">
     <button type="button" aria-expanded={open} onClick={() => setChoice(!open)} className="worklog-toggle"><span aria-live={block.active ? "polite" : undefined} className="min-w-0 truncate">{label}</span><ChevronRight className={`worklog-chevron size-3.5 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} /></button>
-    {open && <div className="worklog-content">{activities.map(item => <ConversationItem sessionId={session?.id} key={item.id} item={item} expanded={expanded} matched={matchedIds?.has(item.id)} select={select} compact />)}</div>}
+    {open && <div className="worklog-content">{activities.map(item => <ConversationItem sessionId={session?.id} key={item.id} item={item} expanded={expanded} matched={matchedIds?.has(item.id)} select={select} agents={agents} compact />)}</div>}
   </section>;
 }
 
-export function Transcript({ items, metadata, expanded, matchedIds, select, session, after }: { items: Item[]; metadata?: Item[]; expanded?: boolean; matchedIds?: Set<string>; select?: (id: string) => void; session?: Session | null; after?: (item: Item) => ReactNode }) {
+export function Transcript({ items, metadata, expanded, matchedIds, select, session, agents, after }: { items: Item[]; metadata?: Item[]; expanded?: boolean; matchedIds?: Set<string>; select?: (id: string) => void; session?: Session | null; agents?: Child[]; after?: (item: Item) => ReactNode }) {
   const blocks = useMemo(() => groupTranscript(items, metadata), [items, metadata]);
   const { turns, firstPrompts } = useMemo(() => {
     const turns = new Map<string, Item>(), firstPrompts = new Map<string, string>();
@@ -124,6 +124,6 @@ export function Transcript({ items, metadata, expanded, matchedIds, select, sess
     previousTime = completedAt ?? tailTime ?? at ?? previousTime;
     const stopped = turn?.status === "interrupted" && lastInTurn.get(block.turnId) === block.id;
     const stoppedTime = stopped ? workDuration({ type: "work", id: "stopped", turnId: block.turnId, turn, items: [], active: false }, 0) : null;
-    return <Fragment key={block.id}>{separator && <div className="turn-divider" data-timeline-separator title={exactTime(at)}><span className="h-px flex-1 bg-line" /><span>{separator}</span><span className="h-px flex-1 bg-line" /></div>}{before !== null && <div className="desktop-work-duration">Worked for {duration(before)}</div>}{block.type === "item" ? <ConversationItem sessionId={session?.id} item={block.item} turnStartedAt={turnStartedAt} expanded={expanded} matched={matchedIds?.has(block.item.id)} select={select} /> : <Work block={block} expanded={expanded} matchedIds={matchedIds} select={select} session={session} />}{after?.(block.type === "item" ? block.item : block.items.at(-1)!)}{stopped && <div role="status" className="desktop-work-duration">Stopped{stoppedTime !== null ? ` after ${duration(stoppedTime)}` : ""}</div>}</Fragment>;
+    return <Fragment key={block.id}>{separator && <div className="turn-divider" data-timeline-separator title={exactTime(at)}><span className="h-px flex-1 bg-line" /><span>{separator}</span><span className="h-px flex-1 bg-line" /></div>}{before !== null && <div className="desktop-work-duration">Worked for {duration(before)}</div>}{block.type === "item" ? <ConversationItem sessionId={session?.id} item={block.item} turnStartedAt={turnStartedAt} expanded={expanded} matched={matchedIds?.has(block.item.id)} select={select} agents={agents} /> : <Work block={block} expanded={expanded} matchedIds={matchedIds} select={select} agents={agents} session={session} />}{after?.(block.type === "item" ? block.item : block.items.at(-1)!)}{stopped && <div role="status" className="desktop-work-duration">Stopped{stoppedTime !== null ? ` after ${duration(stoppedTime)}` : ""}</div>}</Fragment>;
   })}{needsThinking && <Thinking label={session?.activity?.phase.startsWith("waiting_") ? session.activity.label : "Thinking"} />}</>;
 }

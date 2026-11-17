@@ -2,7 +2,7 @@ import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
 import { Check, ChevronRight, FilePenLine, SquareTerminal, Wrench, X } from "lucide-react";
 import { exactTime, localTime, timestamp } from "../time";
 import { itemTime } from "../timeline";
-import { textOf, toolOutput, type Artifact, type Item } from "../api";
+import { textOf, toolOutput, type Artifact, type Child, type Item } from "../api";
 import { CopyButton } from "./shared";
 import { AttachmentList } from "./Attachments";
 import { CODEX_ITEMS, CodexItem } from "./CodexItems";
@@ -12,12 +12,12 @@ import { FileReferenceScope } from "./FileLinks";
 
 const Markdown = lazy(() => import("./Markdown").then(module => ({ default: module.Markdown })));
 
-interface ConversationProps { item: Item; turnStartedAt?: unknown; matched?: boolean; expanded?: boolean; select?: (id: string) => void; compact?: boolean; live?: boolean; sessionId?: string }
+interface ConversationProps { item: Item; turnStartedAt?: unknown; matched?: boolean; expanded?: boolean; select?: (id: string) => void; compact?: boolean; live?: boolean; sessionId?: string; agents?: Child[] }
 export const ConversationItem = memo(function ConversationItem(props: ConversationProps) {
   return <FileReferenceScope sessionId={props.sessionId} itemId={props.item.id}><ConversationRecord {...props} /></FileReferenceScope>;
 });
 
-function ConversationRecord({ item, turnStartedAt, matched = false, expanded, select, live = false }: ConversationProps) {
+function ConversationRecord({ item, turnStartedAt, matched = false, expanded, select, agents, live = false }: ConversationProps) {
   const record = (item.type === "record" ? item.record : item) as Record<string, unknown>;
   const type = String(record.type ?? "unknown");
   const [open, setOpen] = useState(false);
@@ -45,7 +45,7 @@ function ConversationRecord({ item, turnStartedAt, matched = false, expanded, se
       {Array.isArray(record.questions) && record.questions.map((question, index) => <div key={index} className="my-3 rounded-xl border border-line bg-code p-3 text-sm"><p className="font-medium">{question.title}</p>{question.options?.length > 0 && <ul className="mt-2 list-inside list-disc text-xs text-faint">{question.options.map((option: string) => <li key={option}>{option}</li>)}</ul>}<p className="mt-2 text-[10px] text-faint">Reply through the conversation to answer.</p></div>)}
     </article>;
   }
-  if (CODEX_ITEMS.has(type)) return <CodexItem item={item} record={record} matched={matched} expanded={expanded} select={select} live={live} />;
+  if (CODEX_ITEMS.has(type)) return <CodexItem item={item} record={record} matched={matched} expanded={expanded} select={select} agents={agents} live={live} />;
   const file = type === "fileChange";
   const command = type === "commandExecution" || Boolean(record.command);
   const tool = [record.server ?? record.namespace, record.tool ?? record.name].filter(Boolean).join(".");

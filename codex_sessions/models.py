@@ -33,7 +33,9 @@ class Models:
                 model = row.get("model") or row["id"]
                 efforts = [e["reasoningEffort"] for e in row.get("supportedReasoningEfforts", [])]
                 tier = "frontier" if "astra" in model else "fast" if "luna" in model else "balanced"
-                comparison = {"frontier": "Opus / Fable-style demanding work", "fast": "Haiku-style fast delegated work", "balanced": "Sonnet-style everyday coding"}[tier]
+                comparison = {"frontier": "Fable / Opus-style demanding work at max", "fast": "Haiku-style fast delegated work", "balanced": "Sonnet-style everyday coding"}[tier]
+                if model.endswith("-sol"):
+                    comparison = "Opus / Sonnet-style coding at max"
                 models.append({"id": model, "name": row.get("displayName", model), "description": row.get("description", ""), "is_default": model == default.get("model", default.get("id")),
                                "efforts": efforts, "default_effort": "high" if "high" in efforts else row.get("defaultReasoningEffort", "medium"), "runtime_default_effort": row.get("defaultReasoningEffort"),
                                "modalities": row.get("inputModalities", ["text"]), "tier": tier, "claude_comparison": comparison, "legacy": "Older" in row.get("description", "") or "Previous" in row.get("description", "")})
