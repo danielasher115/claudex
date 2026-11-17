@@ -21,6 +21,69 @@ from .context_usage import ContextUsage
 from .account_usage import AccountUsageError
 
 
+def source_items(items):
+    """Keep source evidence and prepared artifacts without returning tool or reasoning payloads."""
+    def citations(values):
+        result = []
+        for value in values if isinstance(values, list) else []:
+            if not isinstance(value, dict):
+                continue
+            citation = {key: value[key] for key in ("url", "title") if isinstance(value.get(key), str)}
+            if isinstance(value.get("url_citation"), dict):
+                citation["url_citation"] = {key: value["url_citation"][key] for key in ("url", "title")
+                                            if isinstance(value["url_citation"].get(key), str)}
+            if citation:
+                result.append(citation)
+        return result
+
+    def public_content(value):
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            return [public_content(block) for block in value if isinstance(block, (str, dict, list))]
+        if not isinstance(value, dict):
+            return {}
+        result = {key: public_content(value[key]) for key in ("text", "content") if key in value}
+        for key in ("citations", "annotations"):
+            if found := citations(value.get(key)):
+                result[key] = found
+        return result
+
+    result = []
+    for item in items:
+        record = item.get("record", item)
+        kind = record.get("type")
+        public = kind in ("userMessage", "agentMessage", "plan") or kind == "message" and record.get("role") in ("user", "assistant")
+        source = {"id": item["id"], "type": kind}
+        if kind == "message":
+            source["role"] = record.get("role")
+        for key in ("attachments", "images"):
+            files = []
+            for owner in ([item, record] if item is not record else [item]):
+                for artifact in owner.get(key, []) if isinstance(owner.get(key), list) else []:
+                    if isinstance(artifact, dict) and all(isinstance(artifact.get(field), str) for field in ("id", "name", "content_url")):
+                        files.append({field: artifact[field] for field in ("id", "name", "content_url", "mime", "kind", "size", "characters", "pages", "image_count", "status", "summary", "source_path") if field in artifact})
+            if files:
+                source[key] = files
+        if source.get("images"):
+            source.update({key: record[key] for key in ("path", "savedPath") if isinstance(record.get(key), str)})
+        if public:
+            source.update({key: public_content(record[key]) for key in ("text", "content") if key in record})
+        if public or kind == "webSearch":
+            for key in ("citations", "annotations"):
+                if found := citations(record.get(key)):
+                    source[key] = found
+        if kind == "webSearch":
+            action = record.get("action")
+            if isinstance(action, dict) and isinstance(action.get("url"), str):
+                source["action"] = {"url": action["url"]}
+            source["results"] = [{key: entry[key] for key in ("url", "link", "title") if isinstance(entry.get(key), str)}
+                                 for entry in record.get("results", []) if isinstance(entry, dict)] if isinstance(record.get("results"), list) else []
+        if source.keys() - {"id", "type", "role"}:
+            result.append(source)
+    return result
+
+
 def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
     service = Gateway(Path(home), socket, Path(data_dir), codex_token_file=codex_token_file)
     service.protocol.port = port
@@ -89,6 +152,9 @@ def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
                 return JSONResponse(await service.background_shells.get(session_id))
             if path.endswith("/history"):
                 return JSONResponse(await service.page(session_id, request.query_params.get("cursor")))
+            if path.endswith("/sources"):
+                page = await service.page(session_id, request.query_params.get("cursor"), compact=True)
+                return JSONResponse({**page, "items": source_items(page["items"])})
             if path.endswith("/view"):
                 history = await service.page(session_id, compact=True)
                 session = await service.session(session_id)
@@ -163,6 +229,7 @@ def create_app(home, socket, data_dir, port=8766, *, codex_token_file=None):
               Route("/api/models", api), Route("/api/setup", api), Route("/api/sessions", api), Route("/api/sessions/{session_id}", api),
               Route("/api/sessions/{session_id}/view", api), Route("/api/sessions/{session_id}/details", api),
               Route("/api/sessions/{session_id}/background-shells", api),
+              Route("/api/sessions/{session_id}/sources", api),
               Route("/api/sessions/{session_id}/files/preview", api, methods=["POST"]),
               Route("/api/sessions/{session_id}/history", api), Route("/api/sessions/{session_id}/messages", api, methods=["POST"]),
               Route("/api/sessions/{session_id}/stop", api, methods=["POST"]),

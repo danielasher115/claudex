@@ -157,7 +157,7 @@ export function App() {
     {dialog === "setup" && <Setup connection={snapshot?.connection} close={() => setDialog(null)} />}
     {dialog === "launch" && <Launch parent={launchParent} close={() => setDialog(null)} launched={id => { setDialog(null); void refresh(); go(id); }} />}
     {dialog === "models" && <Models close={() => setDialog(null)} />}
-    {dialog === "help" && <Dialog title="Keyboard shortcuts" close={() => setDialog(null)}><div className="space-y-4 p-6">{[["Search sessions", "Ctrl / Cmd K"], ["Search this conversation", "Ctrl / Cmd F"], ["Previous / next session", "Alt ↑ / ↓"], ["Go to overview", "Alt H"], ["Send message", "Enter"], ["New line", "Shift Enter"], ["Close search or dialog", "Esc"]].map(([name, shortcut]) => <div key={name} className="flex items-center justify-between gap-8 text-sm"><span className="text-muted">{name}</span><kbd className="shortcut">{shortcut}</kbd></div>)}</div></Dialog>}
+    {dialog === "help" && <Dialog title="Keyboard shortcuts" close={() => setDialog(null)}><div className="space-y-4 p-6">{[["Search sessions", "Ctrl / Cmd K"], ["Search this conversation", "Ctrl / Cmd F"], ["Previous / next session", "Alt ↑ / ↓"], ["Go to overview", "Alt H"], ["Send message", "Enter"], ["New line", "Shift Enter"], ["Close search or dialog", "Esc"], ["Next / previous panel tab", "Alt PgDn / PgUp"], ["Close panel tab", "Alt W"], ["Reopen closed panel tab", "Alt Shift T"], ["Select panel tab", "Alt 1-9"], ["Reorder panel tab", "Alt Shift PgUp / PgDn"], ["Open panel menu", "Alt T"]].map(([name, shortcut]) => <div key={name} className="flex items-center justify-between gap-8 text-sm"><span className="text-muted">{name}</span><kbd className="shortcut">{shortcut}</kbd></div>)}</div></Dialog>}
   </div>;
 }
 

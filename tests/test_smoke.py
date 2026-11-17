@@ -25,6 +25,8 @@ class Runtime:
 
     async def call(self, method, params=None):
         params = params or {}
+        if method == "config/read":
+            return {"config": {}}
         if method == "model/list":
             return {"data": [{"id": name, "model": name, "displayName": name, "description": "Test model", "isDefault": name == "gpt-6.1-sol", "supportedReasoningEfforts": [{"reasoningEffort": effort} for effort in ["low", "medium", "high"]], "defaultReasoningEffort": "medium", "inputModalities": ["text", "image"]} for name in ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna"]]}
         if method == "thread/list":

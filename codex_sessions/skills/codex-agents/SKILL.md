@@ -8,6 +8,12 @@ description: Use when delegating work to Codex through Claudex, listing or recov
 Launch and control local Codex workers through the connected Claudex MCP. The gateway owns durable threads and message
 receipts; the parent may continue working while delegated tasks run. Use the dashboard URL returned by the gateway; the default local address is http://codex.localhost:8765.
 
+This skill guides the external parent, including Claude Code. A launched Codex worker delegates through native Codex subagent tools
+such as `spawn_agent`, `send_input`, `wait` and `close_agent`, using the equivalents exposed by its runtime. Its worker policy takes
+precedence over gateway delegation guidance inherited from this skill or earlier conversation text. New workers do not receive
+Claudex dynamic delegation tools, and only the recursive Claudex MCP is disabled in their thread configuration. Other MCP servers,
+settings and inherited rules, memories and skills remain available. Keep using the full Claudex MCP from the external parent.
+
 ## Start work
 
 Call `models_list` to see the runtime's actual model IDs, supported efforts and approximate Claude task tiers. The default coding
@@ -38,7 +44,7 @@ The task is `prompt`, and prepared artifact IDs go in `attachments`.
 ```
 
 MCP/CLI clients upload and prepare `files` automatically. For reuse across workers, call `artifacts_put` with `path`, then pass its
-returned `id` in `attachments`. Native delegated tools accept prepared IDs or base64 `data`; they do not read privileged paths.
+returned `id` in `attachments`. Prepared contents reach the worker before generation starts.
 Preparation errors must be resolved before launching. Documents are not silently truncated. PDF visual pages and embedded raster
 figures are supplied as images within the gateway's limits. Transcript files can carry an explicit `summary`; raw audio transcription
 is a separate workflow.
@@ -96,7 +102,8 @@ rule/memory source paths and capture warnings. Saved files alone do not prove th
 auto-mode retry keeps its verified export instead of continually changing the tool arguments.
 `conversation_messages` counts messages available in the export; it does not prove that the worker loaded or read them.
 
-Children inherit the saved bundle and history snapshot. A Claude plan-mode caller is constrained to a read-only Codex sandbox.
+Gateway children launched by an external caller inherit the saved bundle and history snapshot. Workers use native Codex subagent
+mechanisms for their own children and pass the task and relevant context. A Claude plan-mode caller is constrained to a read-only Codex sandbox.
 Compatible effort preferences translate to native supported levels; explicit task or Codex parent choices take precedence.
 Claude tool permission patterns are guidance, not native enforcement. Claude-only hook execution, slash commands, connected tools,
 credentials and model internals are not impersonated. Report missing capabilities instead of claiming identical runtime behavior.
@@ -214,10 +221,11 @@ thread resumes it through the normal delivery path. Never relaunch or resend acc
 
 ## Delegate children
 
-Native `agents_launch` calls automatically attach the calling Codex parent. External callers can provide `parent_id` for an existing
-gateway thread. Children inherit attachments, saved context and explicit parent effort, with no elevation of the parent's sandbox
-or workspace. `max_children` limits total gateway children; `max_depth` limits remaining generations. A leaf uses `max_depth:0`.
-Use `agents_children` to inspect the gateway delegation tree.
+Codex workers use native subagent launch, message, wait and close tools for their children. Those children follow Codex lifecycle
+and permission rules. External callers can still provide `parent_id` to `agents_launch` for an explicit gateway child. Gateway
+children inherit attachments, saved context and explicit parent effort, with no elevation of the parent's sandbox or workspace.
+`max_children` and `max_depth` constrain gateway children; they do not configure native Codex subagent limits. Use `agents_children`
+to inspect gateway relationships. The dashboard can also show native children without extending recursive gateway control to them.
 
 ## Cancel precisely and retry safely
 
@@ -233,4 +241,4 @@ The HTTP/CLI protocol names the same narrow operation `agents.cancel`.
 
 Preserve a stable UUID `request_id` when retrying the same launch or message. An `uncertain` result needs inspection of the recorded
 conversation, not a fresh launch. A transport disconnect does not mean the daemon stopped or rejected the work.
-The gateway must stay running to service delegation. Approval waits require the original Codex approval client.
+The gateway must stay running to service external parent operations. Approval waits require the original Codex approval client.

@@ -1,4 +1,4 @@
-"""The shared tool contract for MCP clients and Codex's native dynamic tools."""
+"""The MCP tool contract and compatibility schemas for persisted worker tools."""
 
 from .output import OBSERVATIONS, SELECTABLE_FIELDS
 
@@ -27,7 +27,7 @@ def tools(native=False):
     operations = [
         ("protocol_guide", "Read the bundled codex-agents skill before using this gateway: launch, model selection, attachments, context inheritance, list/attach recovery, steer versus queue, waiting, exact-task cancellation and group Stop.", {}, []),
         ("models_list", "List live Codex model IDs, recommended default, reasoning efforts, image support, and approximate Claude task-tier aliases. Call before choosing a delegated worker.", {"refresh": {"type": "boolean"}}, []),
-        ("agents_launch", "Launch an asynchronous Codex agent. Returns a persistent thread_id immediately. Native calls create a child of the calling agent; attachments and sandbox constraints are inherited.", launch, ["prompt"]),
+        ("agents_launch", "Launch an asynchronous Codex agent. Returns a persistent thread_id immediately. External callers can set parent_id to inherit attachments and sandbox constraints. Workers delegate through native Codex subagents.", launch, ["prompt"]),
         ("agents_send", "Recommended: submit guidance to the current run without stopping the agent. Steering is the active default. mode=queue holds the message until current work finishes, then starts a follow-up iteration; it may wait a long time. Idle agents start a new iteration. Attach artifact IDs or files.", {**thread, "text": {"type": "string"}, "mode": SEND_MODE, "expected_turn_id": SEND_TARGET, "attachments": PROPERTIES["attachments"], **({} if native else {"files": PROPERTIES["files"]}), "request_id": PROPERTIES["request_id"]}, ["thread_id", "text"]),
         ("agents_steer", "Send an existing queued message to the active turn now, preserving its message_id, attachments and original task handle. Read agents_status for active_turn_id and supply it as expected_turn_id. Does not create or resend a message.", {**thread, "message_id": {"type": "string"}, "expected_turn_id": {"type": "string"}}, ["thread_id", "message_id", "expected_turn_id"]),
         ("agents_status", "Inspect runtime, queued-message receipts and children with compact inheritance counts. Use fields to select exact data or detail=full for inventories and message bodies.", thread, ["thread_id"]),

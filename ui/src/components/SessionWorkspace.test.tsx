@@ -25,7 +25,7 @@ beforeEach(() => {
     session: url.includes("/child/") ? child : root,
     children: url.includes("/child/") ? [] : children,
     history: { items: url.includes("/child/") ? childItems : items, source: "codex", next_cursor: null, warning: null },
-  } : { status: "available", processes: [] }), { status: 200 }));
+  } : url.endsWith("/sources") ? { items: childItems, next_cursor: null, source: "codex" } : { status: "available", processes: [] }), { status: 200 }));
   vi.stubGlobal("fetch", fetcher);
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -114,7 +114,7 @@ test("child resource tabs keep their own diff live after closing the chat tab", 
   fireEvent.click(screen.getByRole("button", { name: "Open chat for Review parser" }));
   const chat = await screen.findByRole("tabpanel", { name: "Review parser" });
   await within(chat).findByText("1 file changed");
-  fireEvent.click(within(chat).getByRole("button", { name: "Review changes" }));
+  fireEvent.click(within(chat).getByRole("button", { name: "Review latest file changes" }));
   const changes = await screen.findByRole("tabpanel", { name: "Changes · Review parser" });
   await within(changes).findByRole("table", { name: "Diff for child.ts" });
   fireEvent.click(screen.getByRole("button", { name: "Close Review parser tab" }));
@@ -142,4 +142,47 @@ test("earlier Sources paginate history even while older loaded steps are folded"
   await within(screen.getByRole("tabpanel", { name: "Sources" })).findByRole("button", { name: "Preview parser.png" });
   expect(fetcher.mock.calls.some(([url]) => String(url).includes("/history?cursor=before"))).toBe(true);
   expect(screen.queryByRole("button", { name: "Load sources from earlier conversation" })).toBeNull();
+});
+
+
+test("browser-style tab gestures support middle close, reopen, cycling, numbering and reordering", async () => {
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "Open subagents (1)" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open a tab" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Sources" }));
+  fireEvent.keyDown(window, { altKey: true, key: "PageUp" });
+  expect(screen.getByRole("tab", { name: "Subagents" }).getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(window, { altKey: true, key: "9" });
+  expect(screen.getByRole("tab", { name: "Sources" }).getAttribute("aria-selected")).toBe("true");
+  fireEvent(screen.getByRole("tab", { name: "Sources" }), new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+  expect(screen.queryByRole("tab", { name: "Sources" })).toBeNull();
+  fireEvent.keyDown(window, { altKey: true, shiftKey: true, key: "T" });
+  expect(screen.getByRole("tab", { name: "Sources" }).getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(window, { ctrlKey: true, shiftKey: true, key: "PageUp" });
+  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["Sources", "Subagents"]);
+  fireEvent.keyDown(window, { ctrlKey: true, key: "w" });
+  expect(screen.queryByRole("tab", { name: "Sources" })).toBeNull();
+  fireEvent.keyDown(window, { ctrlKey: true, shiftKey: true, key: "T" });
+  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["Sources", "Subagents"]);
+  const dragged = new Map<string, string>();
+  const dataTransfer = { types: ["text/x-claudex-tab"], setData: (type: string, value: string) => dragged.set(type, value), getData: (type: string) => dragged.get(type), effectAllowed: "", dropEffect: "" };
+  fireEvent.dragStart(screen.getByRole("tab", { name: "Sources" }).parentElement!, { dataTransfer });
+  fireEvent.drop(screen.getByRole("tab", { name: "Subagents" }).parentElement!, { dataTransfer });
+  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["Subagents", "Sources"]);
+  fireEvent.contextMenu(screen.getByRole("tab", { name: "Subagents" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Close tabs to the right" }));
+  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["Subagents"]);
+});
+
+test("Sources include files from unopened subagents and retain child preview scope", async () => {
+  childItems = [{ id: "child-image", type: "imageView", images: [{ ...screenshot, id: "from-child", name: "child.png" }] }];
+  await open();
+  const parent = screen.getByRole("region", { name: "Parent conversation" });
+  expect(within(parent).queryByRole("button", { name: "Review changes" })).toBeNull();
+  fireEvent.click(within(screen.getByRole("complementary", { name: "Session resources" })).getByRole("button", { name: "Sources" }));
+  const panel = screen.getByRole("tabpanel", { name: "Sources" });
+  fireEvent.click(await within(panel).findByRole("button", { name: "Preview child.png" }));
+  expect(await screen.findByRole("dialog", { name: "Preview of child.png" })).toBeTruthy();
+  expect(fetcher.mock.calls.some(([url]) => String(url) === "/api/sessions/child/sources")).toBe(true);
+  expect(fetcher.mock.calls.some(([url]) => String(url) === "/api/sessions/child/view")).toBe(false);
 });

@@ -1,11 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { ChevronRight, FileDiff, FileText, Flower2, GitBranch, Link2, Maximize2, Minimize2, PanelRight, Plus, X } from "lucide-react";
 import { ago, exactTime, project, type Child, type Session } from "../api";
-import type { SessionSource } from "../sessionSources";
 import { ChangeCounts } from "./Diff";
 import { FileLink, FileReferenceScope } from "./FileLinks";
 import { Loading, Status } from "./shared";
 import { SessionView, type SessionResources, type SessionViewProps } from "./SessionView";
+import { useDropdownPosition } from "./dropdown";
+import { useFamilySources, type FamilySource } from "../useFamilySources";
 
 const Changes = lazy(() => import("./Changes").then(module => ({ default: module.Changes })));
 const FilePreview = lazy(() => import("./FilePreview").then(module => ({ default: module.FilePreview })));
@@ -21,29 +22,41 @@ export function SessionWorkspace({ sessions, ...props }: SessionViewProps & { se
   const [selected, setSelected] = useState<string | null>(null);
   const [rail, setRail] = useState(() => window.innerWidth >= 1200);
   const [menu, setMenu] = useState(false);
+  const [contextMenu, setContextMenu] = useState<string | null>(null);
+  const [dragged, setDragged] = useState<string | null>(null);
   const [maximized, setMaximized] = useState(false);
   const [split, setSplit] = useState(50);
   const [focus, setFocus] = useState<"main" | "dock">("main");
-  const [preview, setPreview] = useState<{ source: SessionSource; sessionId: string } | null>(null);
+  const [preview, setPreview] = useState<{ source: FamilySource; sessionId: string } | null>(null);
   const layout = useRef<HTMLDivElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null), menuElement = useRef<HTMLDivElement>(null);
+  const contextTrigger = useRef<HTMLElement>(null), contextElement = useRef<HTMLDivElement>(null);
+  const closed = useRef<{ tab: Tab; index: number }[]>([]);
+  useDropdownPosition(menuButton, menuElement, menu, { minWidth: 160, align: "end" });
+  useDropdownPosition(contextTrigger, contextElement, Boolean(contextMenu), { minWidth: 220, align: "start", anchorKey: contextMenu ?? "" });
   useEffect(() => {
     layout.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.closest<HTMLElement>(".workspace-tab")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [selected]);
+  }, [selected, tabs]);
   useEffect(() => () => document.body.classList.remove("resizing"), []);
   useEffect(() => {
-    if (!menu) return;
-    const dismiss = (event: PointerEvent) => { if (!(event.target as Element).closest(".workspace-add-tab")) setMenu(false); };
+    if (!menu && !contextMenu) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!(event.target as Element).closest(".workspace-add-tab")) setMenu(false);
+      if (!(event.target as Element).closest(".tab-context-menu")) setContextMenu(null);
+    };
     document.addEventListener("pointerdown", dismiss);
     return () => document.removeEventListener("pointerdown", dismiss);
-  }, [menu]);
+  }, [menu, contextMenu]);
   const root = resources[props.id];
   const active = tabs.find(tab => tab.key === selected);
+  const family = useFamilySources({ rootId: props.id, children: root?.children ?? [], sessions, known: resources,
+    enabled: Boolean(!active && rail || active?.kind === "sources") });
   const agentIds = [...new Set(tabs.map(tab => tab.sessionId).filter(id => id !== props.id))];
   const accept = useCallback((value: SessionResources) => setResources(current => current[value.id] === value ? current : { ...current, [value.id]: value }), []);
   const open = (kind: Tab["kind"], sessionId = props.id, runId?: string) => {
     const tab = { key: `${kind}:${sessionId}`, kind, sessionId, runId };
     setTabs(current => current.some(value => value.key === tab.key) ? current.map(value => value.key === tab.key && runId !== undefined ? tab : value) : [...current, tab]);
-    setSelected(tab.key); setMenu(false); setFocus("dock");
+    setSelected(tab.key); setMenu(false); setContextMenu(null); setFocus("dock");
   };
   const openAgent = (id: string) => {
     if (id === props.id) { setSelected(null); setMaximized(false); setFocus("main"); return; }
@@ -55,11 +68,59 @@ export function SessionWorkspace({ sessions, ...props }: SessionViewProps & { se
   };
   const closeTab = (key: string) => {
     const index = tabs.findIndex(tab => tab.key === key);
+    if (index < 0) return;
+    closed.current.push({ tab: tabs[index], index });
     const remaining = tabs.filter(tab => tab.key !== key);
     setTabs(remaining);
     if (selected === key) setSelected(remaining[Math.max(0, index - 1)]?.key ?? null);
     if (!remaining.length) { setMaximized(false); setFocus("main"); }
+    setContextMenu(null);
   };
+  const reopenTab = () => {
+    const previous = closed.current.pop();
+    if (!previous) return;
+    setTabs(current => current.some(tab => tab.key === previous.tab.key) ? current : [...current.slice(0, previous.index), previous.tab, ...current.slice(previous.index)]);
+    setSelected(previous.tab.key); setFocus("dock"); setMenu(false); setContextMenu(null);
+  };
+  const closeGroup = (key: string, rightOnly: boolean) => {
+    const index = tabs.findIndex(tab => tab.key === key);
+    const removed = tabs.map((tab, index) => ({ tab, index })).filter(value => rightOnly ? value.index > index : value.tab.key !== key);
+    closed.current.push(...removed.reverse());
+    const remaining = tabs.filter(tab => !removed.some(value => value.tab.key === tab.key));
+    setTabs(remaining);
+    if (!remaining.some(tab => tab.key === selected)) setSelected(key);
+    setContextMenu(null);
+  };
+  const reorder = (key: string, target: number) => {
+    setTabs(current => {
+      const index = current.findIndex(tab => tab.key === key);
+      if (index < 0 || index === target) return current;
+      const next = [...current]; next.splice(Math.max(0, Math.min(next.length - 1, target)), 0, ...next.splice(index, 1));
+      return next;
+    });
+  };
+  useEffect(() => {
+    const key = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || document.querySelector("dialog[open]")) return;
+      if (event.key === "Escape" && (menu || contextMenu)) { event.preventDefault(); setMenu(false); setContextMenu(null); return; }
+      const modifier = event.ctrlKey || event.metaKey, fallback = event.altKey && !modifier;
+      if (!modifier && !fallback) return;
+      const name = event.key.toLowerCase(), index = tabs.findIndex(tab => tab.key === selected);
+      if (name === "t") {
+        if (event.shiftKey && closed.current.length) { event.preventDefault(); reopenTab(); }
+        else if (!event.shiftKey) { event.preventDefault(); if (!active) open("agents"); setMenu(true); }
+      } else if (name === "w" && active && !event.shiftKey) { event.preventDefault(); closeTab(active.key); }
+      else if (active && (/^[1-9]$/.test(name))) { event.preventDefault(); setSelected(tabs[name === "9" ? tabs.length - 1 : Math.min(tabs.length - 1, Number(name) - 1)].key); }
+      else if (active && (name === "tab" && modifier || name === "pageup" || name === "pagedown")) {
+        event.preventDefault();
+        const step = name === "pageup" || name === "tab" && event.shiftKey ? -1 : 1;
+        if (name !== "tab" && event.shiftKey) reorder(active.key, Math.max(0, Math.min(tabs.length - 1, index + step)));
+        else setSelected(tabs[(index + step + tabs.length) % tabs.length].key);
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  });
   const moveTab = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = tabs.findIndex(tab => tab.key === selected);
     const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
@@ -75,7 +136,7 @@ export function SessionWorkspace({ sessions, ...props }: SessionViewProps & { se
           headerActions={<button type="button" className="icon-button" aria-label="Session resources" aria-expanded={!active && rail} title="Session resources" onClick={toggleResources}><PanelRight className="size-4" /></button>} />
       </div>
       <aside className="workspace-resources" aria-label="Session resources">
-        <ResourceCard resources={root} session={props.summary} open={kind => open(kind)} addAgent={props.launchChild} preview={source => setPreview({ source, sessionId: props.id })} />
+        <ResourceCard resources={root} sources={family.sources} session={props.summary} open={kind => open(kind)} addAgent={props.launchChild} preview={source => setPreview({ source, sessionId: source.sessionId })} />
       </aside>
     </section>
     {active && <>
@@ -89,12 +150,18 @@ export function SessionWorkspace({ sessions, ...props }: SessionViewProps & { se
         <div className="workspace-tabbar">
           <div role="tablist" aria-label="Session panels" className="workspace-tabs" onKeyDown={moveTab}>{tabs.map(tab => {
             const Icon = tabIcon(tab.kind), title = tabTitle(tab, sessions, resources, props.id);
-            return <div key={tab.key} className={`workspace-tab ${selected === tab.key ? "is-selected" : ""}`}>
+            return <div key={tab.key} className={`workspace-tab ${selected === tab.key ? "is-selected" : ""} ${dragged === tab.key ? "is-dragging" : ""}`} draggable
+              onMouseDown={event => { if (event.button === 1) event.preventDefault(); }}
+              onAuxClick={event => { if (event.button === 1) { event.preventDefault(); event.stopPropagation(); closeTab(tab.key); } }}
+              onContextMenu={event => { event.preventDefault(); contextTrigger.current = event.currentTarget; setMenu(false); setContextMenu(tab.key); }}
+              onDragStart={event => { event.dataTransfer.setData("text/x-claudex-tab", tab.key); event.dataTransfer.effectAllowed = "move"; setDragged(tab.key); }} onDragEnd={() => setDragged(null)}
+              onDragOver={event => { if (event.dataTransfer.types.includes("text/x-claudex-tab")) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
+              onDrop={event => { const key = event.dataTransfer.getData("text/x-claudex-tab"); if (tabs.some(value => value.key === key)) { event.preventDefault(); reorder(key, tabs.findIndex(value => value.key === tab.key)); setDragged(null); } }}>
               <button type="button" role="tab" id={`tab-${tab.key}`} aria-controls={`panel-${tab.key}`} aria-selected={selected === tab.key} tabIndex={selected === tab.key ? 0 : -1} title={title} onClick={() => { setSelected(tab.key); setMenu(false); }}><Icon className="size-3.5 shrink-0" /><span>{title}</span></button>
               <button type="button" aria-label={`Close ${title} tab`} className="workspace-tab-close" onClick={() => closeTab(tab.key)}><X className="size-3" /></button>
             </div>;
           })}</div>
-          <div className="workspace-add-tab"><button type="button" className="icon-button" aria-label="Open a tab" aria-expanded={menu} onClick={() => setMenu(!menu)}><Plus className="size-4" /></button>{menu && <div className="workspace-tab-menu" role="menu" onKeyDown={event => { if (event.key === "Escape") setMenu(false); }}>{(["agents", "sources", "changes"] as const).map(kind => <button type="button" role="menuitem" key={kind} onClick={() => open(kind, active.sessionId)}>{kind === "agents" ? "Subagents" : kind === "sources" ? "Sources" : "Changes"}</button>)}</div>}</div>
+          <div className="workspace-add-tab"><button ref={menuButton} type="button" className="icon-button" aria-label="Open a tab" aria-expanded={menu} title="Open a tab (Alt T)" onClick={() => { setContextMenu(null); setMenu(!menu); }}><Plus className="size-4" /></button>{menu && <div ref={menuElement} className="dropdown-menu workspace-tab-menu" role="menu" aria-label="Open panel"><div className="dropdown-content">{(["agents", "sources", "changes"] as const).map(kind => <button type="button" role="menuitem" key={kind} onClick={() => open(kind, active.sessionId)}>{kind === "agents" ? "Subagents" : kind === "sources" ? "Sources" : "Changes"}</button>)}<button type="button" role="menuitem" disabled={!closed.current.length} onClick={reopenTab}>Reopen closed tab</button></div></div>}</div>
           <button type="button" className="icon-button ml-auto" aria-label={maximized ? "Restore split view" : "Maximize panel"} onClick={() => setMaximized(!maximized)}>{maximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}</button>
           <button type="button" className="icon-button" aria-label="Close side panel" onClick={() => { setSelected(null); setMaximized(false); setFocus("main"); }}><PanelRight className="size-4" /></button>
         </div>
@@ -104,11 +171,17 @@ export function SessionWorkspace({ sessions, ...props }: SessionViewProps & { se
         </div>)}
         {tabs.filter(tab => tab.kind !== "agent").map(tab => <div key={tab.key} id={`panel-${tab.key}`} role="tabpanel" aria-labelledby={`tab-${tab.key}`} hidden={selected !== tab.key} className="workspace-tabpanel">
           {tab.kind === "agents" ? <AgentsPanel id={tab.sessionId} resources={resources[tab.sessionId]} sessions={sessions} select={openAgent} />
-            : tab.kind === "sources" ? <SourcesPanel resources={resources[tab.sessionId]} sessionId={tab.sessionId} addSources={() => attachSources(tab.sessionId)} preview={source => setPreview({ source, sessionId: tab.sessionId })} />
+            : tab.kind === "sources" ? <SourcesPanel resources={resources[tab.sessionId]} family={family} agents={root?.children ?? []} sessionId={tab.sessionId} addSources={() => attachSources(tab.sessionId)} preview={source => setPreview({ source, sessionId: source.sessionId })} />
               : <Suspense fallback={<div className="p-5"><Loading label="Opening changes" /></div>}><Changes key={tab.runId ?? "latest"} embedded runs={resources[tab.sessionId]?.runs ?? []} initialRun={tab.runId} close={() => closeTab(tab.key)} /></Suspense>}
         </div>)}
       </aside>
     </>}
+    {contextMenu && <div ref={contextElement} role="menu" aria-label="Tab actions" className="dropdown-menu tab-context-menu"><div className="dropdown-content">
+      <button type="button" role="menuitem" onClick={() => closeTab(contextMenu)}>Close tab<kbd>Alt W</kbd></button>
+      <button type="button" role="menuitem" disabled={tabs.length < 2} onClick={() => closeGroup(contextMenu, false)}>Close other tabs</button>
+      <button type="button" role="menuitem" disabled={tabs.at(-1)?.key === contextMenu} onClick={() => closeGroup(contextMenu, true)}>Close tabs to the right</button>
+      <button type="button" role="menuitem" disabled={!closed.current.length} onClick={reopenTab}>Reopen closed tab<kbd>Alt Shift T</kbd></button>
+    </div></div>}
     {preview?.source.file && <FileReferenceScope sessionId={preview.sessionId} itemId={preview.source.itemId}><Suspense fallback={<Loading label="Opening source" />}><FilePreview file={preview.source.file} close={() => setPreview(null)} /></Suspense></FileReferenceScope>}
   </div>;
 }
@@ -118,8 +191,8 @@ function AgentAvatar({ id }: { id: string }) {
   return <Flower2 aria-hidden className="agent-avatar size-5 shrink-0" style={{ color, fill: color }} />;
 }
 
-function ResourceCard({ resources, session, open, addAgent, preview }: { resources?: SessionResources; session?: Session; open: (kind: "changes" | "agents" | "sources") => void; addAgent?: () => void; preview: (source: SessionSource) => void }) {
-  const agents = resources?.children ?? [], sources = resources?.sources ?? [], latest = resources?.runs.filter(run => run.files.length).at(-1);
+function ResourceCard({ resources, sources, session, open, addAgent, preview }: { resources?: SessionResources; sources: FamilySource[]; session?: Session; open: (kind: "changes" | "agents" | "sources") => void; addAgent?: () => void; preview: (source: FamilySource) => void }) {
+  const agents = resources?.children ?? [], latest = resources?.runs.filter(run => run.files.length).at(-1);
   const count = agents.filter(working).length;
   return <div className="resource-card">
     <div className="resource-project" title={resources?.session?.cwd || session?.cwd}>{project(resources?.session?.cwd || session?.cwd || "")}</div>
@@ -128,25 +201,38 @@ function ResourceCard({ resources, session, open, addAgent, preview }: { resourc
       <button type="button" className="resource-agent-summary" aria-label={`Open subagents (${agents.length})`} onClick={() => open("agents")}><span className="resource-avatars">{agents.slice(0, 4).map(agent => <AgentAvatar key={agent.thread_id} id={agent.thread_id} />)}</span><span>{count ? `${count} working` : agents.length ? `${agents.length} done` : "No subagents"}</span>{count > 0 && agents.length > count && <span className="text-faint">{agents.length - count} done</span>}</button>
     </div>
     <div className="resource-section"><div className="resource-heading"><button type="button" onClick={() => open("sources")}>Sources</button><button type="button" className="icon-button" aria-label="Add sources" title="Attach sources to your next message" disabled={!resources} onClick={resources?.addSources}><Plus className="size-3.5" /></button></div>
-      {sources.slice(0, 3).map(source => <SourceRow key={source.id} source={source} sessionId={resources?.id || session?.id || ""} preview={preview} compact />)}
+      {sources.slice(0, 3).map(source => <SourceRow key={source.id} source={source} sessionId={source.sessionId} preview={preview} compact />)}
       {!sources.length && <p className="resource-empty">Files, images, and links appear here</p>}
       <button type="button" className="resource-view-all" onClick={() => open("sources")}><Link2 className="size-3.5" />View all{sources.length > 0 && <span>{sources.length}</span>}</button>
     </div>
   </div>;
 }
 
-function SourceRow({ source, sessionId, preview, compact = false }: { source: SessionSource; sessionId: string; preview: (source: SessionSource) => void; compact?: boolean }) {
+function SourceRow({ source, sessionId, preview, compact = false }: { source: FamilySource; sessionId: string; preview: (source: FamilySource) => void; compact?: boolean }) {
   const icon = source.file?.kind === "image" ? <img src={source.file.content_url} alt="" loading="lazy" /> : source.file ? <FileText className="size-4" /> : <Link2 className="size-4" />;
-  const body = <>{icon}<span className="source-label"><span className="truncate">{source.name}</span>{!compact && <><small title={source.file?.source_path || source.href}>{source.file?.source_path || source.href || source.file?.mime}</small><small className="source-origin">{{ attached: "Attached to the conversation", generated: "Generated by the agent", viewed: "Viewed by the agent", referenced: "Referenced in the conversation" }[source.origin]}</small></>}</span></>;
+  const body = <>{icon}<span className="source-label"><span className="truncate">{source.name}</span>{!compact && <><small title={source.file?.source_path || source.href}>{source.file?.source_path || source.href || source.file?.mime}</small><small className="source-origin">{source.sessionName && <span className="source-agent">{source.sessionName} · </span>}{{ attached: "Attached to the conversation", generated: "Generated by the agent", viewed: "Viewed by the agent", referenced: "Referenced in the conversation" }[source.origin]}</small></>}</span></>;
   return <div className={`workspace-source ${compact ? "is-compact" : ""}`} title={source.file?.source_path || source.href || source.name}>{source.file
     ? <button type="button" aria-label={`Preview ${source.name}`} onClick={() => preview(source)}>{body}</button>
     : <FileReferenceScope sessionId={sessionId} itemId={source.itemId}><FileLink href={source.href || ""} title={source.name}>{body}</FileLink></FileReferenceScope>}</div>;
 }
 
-function SourcesPanel({ resources, sessionId, addSources, preview }: { resources?: SessionResources; sessionId: string; addSources: () => void; preview: (source: SessionSource) => void }) {
-  return <div className="workspace-sources"><div className="workspace-panel-heading"><span>Sources{resources?.sources.length ? ` · ${resources.sources.length}` : ""}</span><button type="button" className="icon-button" aria-label="Add sources" title="Attach sources to your next message" disabled={!resources} onClick={addSources}><Plus className="size-4" /></button></div>
-    {resources?.sources.map(source => <SourceRow key={source.id} source={source} sessionId={sessionId} preview={preview} />)}
-    {!resources?.sources.length && <p className="workspace-empty">Screenshots, files, and links from the conversation will appear here.</p>}
+function SourcesPanel({ resources, family, agents, sessionId, addSources, preview }: { resources?: SessionResources; family: ReturnType<typeof useFamilySources>; agents: Child[]; sessionId: string; addSources: () => void; preview: (source: FamilySource) => void }) {
+  const ids = new Set([sessionId]);
+  for (const agent of agents) {
+    let parent = agent.parent_id;
+    const visited = new Set<string>();
+    while (parent && !visited.has(parent)) {
+      if (parent === sessionId) { ids.add(agent.thread_id); break; }
+      visited.add(parent); parent = agents.find(value => value.thread_id === parent)?.parent_id || "";
+    }
+  }
+  const sources = family.sources.filter(source => ids.has(source.sessionId));
+  return <div className="workspace-sources"><div className="workspace-panel-heading"><span>Sources{sources.length ? ` · ${sources.length}` : ""}</span><button type="button" className="icon-button" aria-label="Add sources" title="Attach sources to your next message" disabled={!resources} onClick={addSources}><Plus className="size-4" /></button></div>
+    {sources.map(source => <SourceRow key={source.id} source={source} sessionId={source.sessionId} preview={preview} />)}
+    {!sources.length && !family.loading && <p className="workspace-empty">Screenshots, files, and links from the conversation will appear here.</p>}
+    {family.loading && <div className="py-3"><Loading label="Loading subagent sources" /></div>}
+    {family.error && <div role="status" className="py-3 text-xs text-removed-ink">Some subagent sources could not be loaded: {family.error}<button type="button" className="ml-2 underline" onClick={family.retry}>Retry</button></div>}
+    {family.hasEarlier && <button type="button" className="workspace-load-more" disabled={family.loading} onClick={family.loadEarlier}>Load earlier subagent sources</button>}
     {resources?.hasEarlier && <button type="button" className="workspace-load-more" disabled={resources.loadingEarlier} onClick={resources.loadEarlier}>{resources.loadingEarlier ? "Loading earlier sources..." : "Load sources from earlier conversation"}</button>}
   </div>;
 }

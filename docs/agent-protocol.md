@@ -1,7 +1,8 @@
 # Agent protocol
 
-The dashboard, MCP adapter, CLI, and native agent delegation tools share one local gateway. Launches return a thread ID immediately;
-the same thread is visible in the dashboard. Legacy `codex` and `codex-reply` MCP tools remain available for callers that wait for an answer.
+The dashboard, MCP adapter and CLI share one local gateway. Launches return a thread ID immediately; the same thread is visible
+in the dashboard. Codex workers use native Codex subagents for their own delegation. Legacy `codex` and `codex-reply` MCP tools
+remain available for callers that wait for an answer.
 
 ## Operations
 
@@ -22,7 +23,7 @@ the same thread is visible in the dashboard. Legacy `codex` and `codex-reply` MC
 | `agents.transcript` | Read paginated recorded history |
 | `agents.list` | Discover local conversations with compact, paginated rows |
 
-MCP and native tools use underscores, for example `agents_launch`. Read `protocol_guide` before delegating; the same guide is
+MCP tools use underscores, for example `agents_launch`. Read `protocol_guide` before delegating; the same guide is
 available as the `codex-sessions://skills/codex-agents` MCP resource and is bundled with the Python package.
 
 ## CLI and MCP
@@ -67,6 +68,34 @@ An HTTP caller posts this envelope to `/api/protocol` with the local `X-Codex-To
 
 Responses include `protocol_version` and `result`. Unsupported operations and versions fail explicitly. Browser actions use
 same-origin endpoints and do not receive the protocol token. Keep tokens out of prompts, source control, and bug reports.
+
+## Worker delegation and MCP isolation
+
+The external parent controls workers through the full Claudex MCP. New workers receive no gateway dynamic tools; their developer
+instructions direct delegation to native Codex `spawn_agent`, `send_input`, `wait` and `close_agent`, or the equivalents exposed by
+that runtime. This policy overrides gateway delegation guidance in inherited caller text and the `codex-agents` skill inventory.
+Other inherited instructions, skills, memories and settings remain available.
+
+Before starting a worker, the gateway reads effective configuration for its workspace with `config/read`. It applies per-thread
+`mcp_servers.<name>.enabled=false` overrides for servers named `codex` or `claudex`, and aliases whose command launches
+`claudex mcp`, `codex-sessions mcp`, `codex-session mcp` or `python -m codex_sessions mcp`, including WSL `--exec` and `uv run`
+wrappers. Unrelated MCP servers retain their configured transports and tools. Explicit task overrides cannot re-enable the recursive
+gateway connection. No global config is edited.
+
+Idle follow-ups to gateway-owned workers refresh this policy through `thread/resume`; unrelated native threads keep their own
+configuration. A configuration-read failure prevents an unisolated start or resume. Active work is not interrupted to apply policy.
+The existing queue, exact-task steering and cancellation contracts remain unchanged.
+
+Verified with installed Codex 0.169.0: `thread/start` accepts nested MCP configuration patches, and an isolated app-server probe kept
+an unrelated stdio MCP connected with its tool while disabling the gateway alias. Nested tables also preserve server names containing
+periods; that version splits dotted override keys literally. Generated experimental schema supports `config` and
+`developerInstructions` on both start and resume, but exposes `dynamicTools` only on start. Older worker rollouts can therefore still
+advertise persisted gateway tools. Gateway control calls from those tools return native subagent guidance without launching or
+controlling another worker; legacy observation calls remain readable. Existing rollouts and running agents are not rewritten or restarted.
+
+See the [OpenAI configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference) for MCP enablement and
+[app-server documentation](https://learn.chatgpt.com/docs/app-server) for thread configuration. The installed protocol schema determines
+which fields this gateway sends when it differs from newer documentation.
 
 ## Model selection
 
@@ -132,7 +161,7 @@ Identity, status, errors, and task handles are retained when selecting fields. A
 MCP read tools advertise read-only and idempotency hints, and provide structured JSON plus compatible text for older clients.
 Claude Code Mode can batch independent calls, filter those values locally, and wait on saved handles without repeated discovery.
 The bundled `codex-agents` skill includes a bounded JavaScript monitoring example. No extra code interpreter runs in the gateway.
-Native Codex tools, MCP clients, and CLI calls share the same observation policy; dashboard history and internal records remain complete.
+Legacy persisted observation tools, MCP clients and CLI calls share the same observation policy; dashboard history and internal records remain complete.
 
 Code Mode is a client feature with its own model, account, and resume requirements. See the [official Claude documentation](https://code.claude.com/docs/en/code-mode).
 It is supported for eligible direct Anthropic terminal sessions, including this MCP's ordinary launch hooks. It is unavailable through
@@ -224,8 +253,9 @@ Non-Git workspaces also retain native evidence only.
 
 ## Child agents and stopping
 
-Gateway agents receive native launch and control tools. A child's parent ID is attached automatically. Children inherit the selected
-attachment and context bundle; sandbox authority and workspace remain constrained by the parent. No shell call to localhost is needed.
+Workers launch and coordinate their children through native Codex subagent tools. Codex owns those native child lifecycles and
+permissions. The external parent can still use `agents.launch` with `parent_id` for an explicit gateway child; those children inherit
+the saved attachment and context bundle, with sandbox authority and workspace constrained by the gateway parent.
 
 `max_depth` counts further permitted delegation generations. A child can request zero to become a leaf. `max_children` limits the total
 number of gateway children its parent can launch. These are gateway delegation limits.
@@ -234,8 +264,10 @@ The dashboard combines gateway parent records with native Codex spawn metadata. 
 and Changes in a tabbed side pane. Agent chats open as individual tabs alongside the parent, with navigation to their direct parent.
 Root lists omit known descendants unless pinned,
 searched, filtered by status, or their root is outside the current view. This display hierarchy does not extend gateway control rights:
-`agents.children`, delegated control authorization and recursive stopping continue to use gateway-owned delegation records.
+`agents.children` and recursive stopping continue to use gateway-owned delegation records. Native children shown in the dashboard
+remain under Codex lifecycle control; their display relationship does not enroll them in gateway-recursive Stop.
 
 `agents.stop` interrupts the exact active turn, then stops gateway descendants and removes queued follow-ups. A stopped parent cannot
 launch more gateway children until explicitly continued. `agents.cancel` targets a specific message or turn, protecting newer work.
-The gateway must remain running to service delegation tools. See [thread lifecycle](thread-lifecycle.md) for idle release and resumption.
+The gateway must remain running to service external MCP and CLI operations. See [thread lifecycle](thread-lifecycle.md) for idle
+release and resumption.

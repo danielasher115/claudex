@@ -9,15 +9,16 @@ flowchart LR
     MCP[Stdio MCP adapter] --> HTTP
     CLI[CLI client] --> HTTP
     HTTP --> Gateway[Gateway and protocol operations]
-    Native[Agent delegation tools] --> Gateway
+    Codex --> Native[Native Codex subagents]
     Gateway --> State[(Local gateway state)]
     Gateway --> Codex[Local Codex app-server]
     Codex --> History[(Codex saved history)]
 ```
 
 The browser uses same-origin dashboard endpoints and server-sent events. CLI and MCP adapters use the authenticated local protocol.
-Gateway-owned native delegation tools call the same operation layer. Codex remains responsible for model execution, its sandbox,
-approvals, saved native threads, and its runtime integrations.
+Codex workers delegate through native Codex subagent tools. Worker policy disables only recursive Claudex MCP connections and
+supplies native delegation instructions at launch and owned idle resume. Codex remains responsible for model execution, its sandbox,
+approvals, saved native threads, and its other runtime integrations.
 
 ## Boundaries that hide policy
 
@@ -25,6 +26,7 @@ approvals, saved native threads, and its runtime integrations.
 | --- | --- | --- |
 | Gateway lifecycle | Run a connected local gateway | Background workers, reconciliation, queue processing, and cleanup |
 | Protocol operations | Launch, send, wait, cancel, result | Request validation, exact target ownership, receipts, and delivery state |
+| Worker policy | Run Codex workers with native subagents | Recursive MCP identification, per-thread isolation and delegation instructions |
 | Context inheritance | Prepare the caller context | Instruction discovery, import trust, snapshots, supported settings, and provenance |
 | Artifact preparation | Prepare an attachment | Format detection, extraction, size limits, rendered pages, and immutable IDs |
 | Native transport | Call a Codex RPC method | Unix/WebSocket framing, correlation, notifications, connection state, and reconnect handling |
@@ -45,6 +47,12 @@ This keeps an open Changes tab current even after its chat tab closes.
 Source collection reads prepared attachments and images, public Markdown links and structured web references from loaded history.
 Earlier conversation sources load on request through existing history pagination. Per-item parsing is cached while unchanged history
 objects are reused. File references retain the originating item ID and use the existing server authorization and preview boundary.
+Child source pages use a compact projection and at most two concurrent requests, with refresh throttling for active agents. Sources
+retain the originating session as well as the item ID, so an unopened child's file preview uses that child's evidence boundary.
+
+Tab actions have one owner in the workspace: closing, reopening, selection and ordering update the same tab list for mouse gestures,
+context actions and keyboard shortcuts. Native browser shortcuts are handled when delivered to the page; Alt alternatives remain
+available when the browser reserves the usual Ctrl or Command combination for its own tabs.
 
 ## Trace one operation
 

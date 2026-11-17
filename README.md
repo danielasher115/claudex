@@ -22,12 +22,12 @@ before switching to the live dashboard.
 ## What you get
 
 - **One workspace for your agents.** Live activity, searchable conversations, project groups, pinned sessions, and saved history.
-- **Control while work is happening.** Queue a follow-up, steer the current turn, stop an agent and its delegated children, or resume saved work.
+- **Control while work is happening.** Queue a follow-up, steer the current turn, stop an agent, or resume saved work.
 - **A reviewable handoff.** Read messages and tool output, inspect per-run unified or split diffs, and preview supported attachments.
 - **Context you can inspect.** See inherited instructions, memories, skills, model settings, and the runtime's available integrations.
 - **Plan usage at a glance.** See native account allowances, scheduled reset times, and earned reset credits. Redeem a reset with confirmation.
 - **Compact agent monitoring.** Newest-first discovery, bounded status summaries, explicit full details, and Code Mode batching guidance.
-- **One gateway for every caller.** The dashboard, CLI, MCP clients, and agent delegation tools share the same local state and delivery rules.
+- **One gateway for every caller.** The dashboard, CLI, and MCP clients share the same local state and delivery rules.
 
 ## Quick start
 
@@ -114,6 +114,10 @@ Without the hook, agents can still launch; you can pass a `session_summary` for 
 For Claude on Windows talking to Claudex inside WSL, see the [WSL MCP configuration](docs/setup.md#windows-claude-with-a-wsl-gateway).
 
 ## See the work
+
+The floating resource card opens Subagents, Sources and Changes beside the parent chat. Sources include child-agent screenshots,
+files and links without opening each chat. Tabs support middle-click closing, drag reordering and a context menu. Use Alt+W to close,
+Alt+Shift+T to reopen, and Alt+PageUp/PageDown to switch; the keyboard help lists the remaining shortcuts.
 
 Follow active agents and browse projects:
 

@@ -416,7 +416,7 @@ def render(context):
     if context.get("warnings"):
         sections.append("Context capture notices:\n" + "\n".join(context["warnings"]))
     if context.get("provider") == "claude":
-        sections.append("Translate Claude tool references by capability: use native file tools for Read/Write/Edit, shell execution for Bash, file search for Grep/Glob, and agents_launch for delegation. Read applicable nested CLAUDE.md, CLAUDE.local.md and .claude/rules before working in a subdirectory. Skill paths and their relative resources refer to the inherited files. Historical caller messages are supplied separately as reference evidence.")
+        sections.append("Translate Claude tool references by capability: use native file tools for Read/Write/Edit, shell execution for Bash, file search for Grep/Glob, and native Codex subagent tools for delegation. Read applicable nested CLAUDE.md, CLAUDE.local.md and .claude/rules before working in a subdirectory. Skill paths and their relative resources refer to the inherited files. Historical caller messages are supplied separately as reference evidence.")
     return "\n\n".join(sections)
 
 

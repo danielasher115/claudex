@@ -1,0 +1,54 @@
+.dropdown-menu.select-menu,
+.dropdown-menu.workspace-tab-menu,
+.dropdown-menu.tab-context-menu,
+.dropdown-menu.context-menu {
+  position: fixed;
+  inset: auto;
+  z-index: 60;
+  margin: 0;
+  min-width: 0;
+  max-width: calc(100vw - 16px);
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.16), 0 2px 6px rgb(0 0 0 / 0.06);
+}
+
+.dropdown-menu::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--dropdown-arrow-x) - 6px);
+  z-index: 0;
+  width: 10px;
+  height: 10px;
+  background: var(--panel);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.dropdown-menu[data-placement="bottom"]::before {
+  top: -6px;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.dropdown-menu[data-placement="top"]::before {
+  bottom: -6px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.dropdown-content {
+  position: relative;
+  z-index: 1;
+  max-height: calc(var(--dropdown-max-height, 288px) - 2px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border-radius: 9px;
+  background: var(--panel);
+}

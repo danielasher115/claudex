@@ -1,8 +1,11 @@
 import asyncio
+import json
 import logging
 import time
 
 from .rpc import RpcError
+from .context import render
+from .worker_policy import DELEGATION_INSTRUCTIONS, isolated_config
 
 STARTUP_TIMEOUT = 120
 MISSING_HISTORY_ERROR = 'Agent never became available in daemon history or loaded threads before its startup deadline.'
@@ -22,6 +25,27 @@ class ThreadLifecycle:
     @staticmethod
     def runtime_config(overrides=None):
         return {"thread_unload_delay_secs": 1, **(overrides or {})}
+
+    async def worker_parameters(self, cwd, overrides=None, developer_instructions=None, context=None):
+        result = await self.service.rpc.call('config/read', {'cwd': str(cwd), 'includeLayers': False})
+        effective = result.get('config')
+        if not isinstance(effective, dict) or not isinstance(effective.get('mcp_servers', {}), dict):
+            raise RpcError('Codex did not return a valid MCP configuration for worker isolation')
+        config = isolated_config(effective.get('mcp_servers', {}), self.runtime_config(overrides))
+        if developer_instructions is None:
+            developer_instructions = config.get('developer_instructions', effective.get('developer_instructions'))
+        instructions = '\n\n'.join(value for value in (developer_instructions, render(context) if context else None,
+                                                        DELEGATION_INSTRUCTIONS) if value)
+        return {'config': config, 'developerInstructions': instructions}
+
+    async def resume_parameters(self, session_id, cwd):
+        params = {'threadId': session_id, 'excludeTurns': True, 'config': self.runtime_config()}
+        agent = self.service.protocol.agent(session_id)
+        if agent:
+            request = json.loads(agent['request_json'])
+            params.update(await self.worker_parameters(cwd, request.get('config'), request.get('developer-instructions'),
+                                                       request.get('context')))
+        return params
 
     def failure(self, session_id):
         row = self.service.db.execute('SELECT error FROM agent_failures WHERE session_id=?', (session_id,)).fetchone()

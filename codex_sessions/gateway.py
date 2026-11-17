@@ -498,8 +498,8 @@ class Gateway:
             session = await self.session(message["session_id"], fresh=True)
             if not session["can_send"] or session["status"] == "active":
                 return
-            await self.rpc.call("thread/resume", {"threadId": message["session_id"], "excludeTurns": True,
-                                                  "config": self.thread_lifecycle.runtime_config()})
+            resume = await self.thread_lifecycle.resume_parameters(message["session_id"], session["cwd"])
+            await self.rpc.call("thread/resume", resume)
             self.thread_lifecycle.acquired(message["session_id"])
             saved = self.db.execute("SELECT input_json FROM message_inputs WHERE message_id=?", (message["id"],)).fetchone()
             self.db.execute("UPDATE agents SET stopped=0 WHERE session_id=?", (message["session_id"],)); self.db.commit()
