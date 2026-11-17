@@ -230,8 +230,9 @@ attachment and context bundle; sandbox authority and workspace remain constraine
 `max_depth` counts further permitted delegation generations. A child can request zero to become a leaf. `max_children` limits the total
 number of gateway children its parent can launch. These are gateway delegation limits.
 
-The dashboard combines gateway parent records with native Codex spawn metadata to display a nested subagent tree in the parent chat.
-Children remain individually inspectable, with navigation to their direct parent. Root lists omit known descendants unless pinned,
+The dashboard combines gateway parent records with native Codex spawn metadata. The session resource card opens Subagents, Sources,
+and Changes in a tabbed side pane. Agent chats open as individual tabs alongside the parent, with navigation to their direct parent.
+Root lists omit known descendants unless pinned,
 searched, filtered by status, or their root is outside the current view. This display hierarchy does not extend gateway control rights:
 `agents.children`, delegated control authorization and recursive stopping continue to use gateway-owned delegation records.
 

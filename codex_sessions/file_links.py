@@ -82,6 +82,10 @@ def markdown_links(text):
                     yield href
             elif token.type == "link_close":
                 linked = False
+            elif token.type == "image":
+                source = token.attrGet("src")
+                if source:
+                    yield source
             elif token.type == "text" and not linked:
                 for match in re.finditer(r"https?://[^\s<>\"']+", token.content):
                     href = match[0].rstrip(".,;!?")

@@ -1,5 +1,5 @@
 import { FileText, Paperclip, X } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type RefObject } from "react";
 import { api, type Artifact } from "../api";
 import { Loading } from "./shared";
 const FilePreview = lazy(() => import("./FilePreview").then(module => ({ default: module.FilePreview })));
@@ -26,8 +26,9 @@ export function useAttachments(key?: string) {
   return { files, setFiles, uploading, error, upload };
 }
 
-export function AttachmentPicker({ attachments }: { attachments: ReturnType<typeof useAttachments> }) {
-  const input = useRef<HTMLInputElement>(null);
+export function AttachmentPicker({ attachments, inputRef }: { attachments: ReturnType<typeof useAttachments>; inputRef?: RefObject<HTMLInputElement | null> }) {
+  const fallback = useRef<HTMLInputElement>(null);
+  const input = inputRef ?? fallback;
   return <><input type="file" multiple ref={input} className="hidden" aria-label="Choose attachments" onChange={e => { if (e.target.files) void attachments.upload(e.target.files); e.target.value = ""; }} /><button type="button" className="icon-button" aria-label="Attach files" title="Attach documents, code, images or transcript summaries" disabled={attachments.uploading > 0} onClick={() => input.current?.click()}><Paperclip className="size-4" /></button></>;
 }
 

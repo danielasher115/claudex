@@ -37,6 +37,15 @@ The server adapter translates requests and responses; it should not require call
 `protocol.py` is the public operation boundary, while delivery, turns, context, artifacts, and lifecycle modules hold their respective policies.
 The React frontend in `ui/` consumes the HTTP contract, and its built assets ship with the Python package.
 
+`SessionWorkspace` owns resource tabs, panel size and session selection within the parent chat. A `SessionView` owns its fetched history,
+draft, scroll position and derived resources. The parent stays mounted while side tabs change. A child resource owner remains mounted
+while any of its tabs exist, and refreshes when its chat or resources are selected; inactive children stop history and shell polling.
+This keeps an open Changes tab current even after its chat tab closes.
+
+Source collection reads prepared attachments and images, public Markdown links and structured web references from loaded history.
+Earlier conversation sources load on request through existing history pagination. Per-item parsing is cached while unchanged history
+objects are reused. File references retain the originating item ID and use the existing server authorization and preview boundary.
+
 ## Trace one operation
 
 For a launch, the caller supplies a task, workspace, optional attachments, and context preferences. The gateway validates the request,

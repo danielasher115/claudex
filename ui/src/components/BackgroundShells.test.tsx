@@ -1,4 +1,4 @@
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { act, cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import { BackgroundShells } from "./BackgroundShells";
 
@@ -41,4 +41,21 @@ test("changing sessions never shows the previous session's running shells", asyn
   rerender(<BackgroundShells sessionId="b" />);
   expect(screen.queryByText("1 background shell")).toBeNull();
   expect(screen.queryByText("sleep 600")).toBeNull();
+});
+
+
+test("inactive session tabs do not poll and resume when selected", async () => {
+  vi.useFakeTimers();
+  try {
+    respond({ status: "available", items: [] });
+    const view = render(<BackgroundShells sessionId="a" enabled={false} />);
+    expect(fetch).not.toHaveBeenCalled();
+    await act(async () => view.rerender(<BackgroundShells sessionId="a" enabled />));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    view.rerender(<BackgroundShells sessionId="a" enabled={false} />);
+    await act(async () => vi.advanceTimersByTimeAsync(15000));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await act(async () => view.rerender(<BackgroundShells sessionId="a" enabled />));
+    expect(fetch).toHaveBeenCalledTimes(2);
+  } finally { vi.useRealTimers(); }
 });

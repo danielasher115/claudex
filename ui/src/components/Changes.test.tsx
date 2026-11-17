@@ -27,6 +27,27 @@ test("review changes shows a file list, real line numbers, split layout and file
   expect(screen.getByText("No matching files")).toBeTruthy();
 });
 
+test("embedded changes selects and filters files without opening a dialog", () => {
+  const secondPatch = "--- a/src/other.ts\n+++ b/src/other.ts\n@@ -1 +1 @@\n-other old\n+other new\n";
+  render(<Changes runs={[{ ...run, files: diffFiles(patch + secondPatch) }]} initialRun={run.id} close={vi.fn()} embedded />);
+  const changes = screen.getByRole("region", { name: "Changes" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(within(changes).getByRole("combobox", { name: "Run" })).toBeTruthy();
+  expect(within(changes).getByRole("button", { name: "Copy run diff" })).toBeTruthy();
+  expect(within(changes).getByRole("table", { name: "Diff for src/app.ts" }).textContent).toContain("new code");
+  fireEvent.click(within(changes).getByRole("button", { name: "src/other.ts" }));
+  expect(within(changes).getByRole("table", { name: "Diff for src/other.ts" }).textContent).toContain("other new");
+  expect(within(changes).queryByRole("table", { name: "Diff for src/app.ts" })).toBeNull();
+  fireEvent.click(within(changes).getByRole("button", { name: "Split" }));
+  expect(within(changes).getByRole("columnheader", { name: "Before" })).toBeTruthy();
+  fireEvent.click(within(changes).getByRole("checkbox", { name: "Wrap lines" }));
+  expect(within(changes).getByRole("table").parentElement?.classList.contains("diff-wrap")).toBe(true);
+  expect(within(changes).getByRole("button", { name: "Copy diff" })).toBeTruthy();
+  fireEvent.change(within(changes).getByRole("textbox", { name: "Filter changed files" }), { target: { value: "app.ts" } });
+  expect(within(changes).getByRole("table", { name: "Diff for src/app.ts" })).toBeTruthy();
+  expect(within(changes).queryByRole("button", { name: "src/other.ts" })).toBeNull();
+});
+
 test("per-file diffs collapse without mounting their code and preserve copy controls", () => {
   render(<DiffFile file={run.files[0]} />);
   const toggle = screen.getByRole("button", { name: "Collapse src/app.ts" });

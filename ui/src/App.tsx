@@ -3,7 +3,7 @@ import { ArrowUpRight, ChevronRight, CircleHelp, Command, Cpu, Folder, FolderOpe
 import { ago, api, exactTime, label, project, tokens, type Session, type Snapshot } from "./api";
 import { Resizer, useSidebarWidth } from "./components/Resizer";
 import { CopyButton, Dialog, Status } from "./components/shared";
-import { SessionView } from "./components/SessionView";
+import { SessionWorkspace } from "./components/SessionWorkspace";
 import { Launch } from "./components/Launch";
 import { Select } from "./components/Select";
 import { Models } from "./components/Models";
@@ -152,7 +152,7 @@ export function App() {
     <main className="flex min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3 md:hidden"><button aria-label="Open sidebar" onClick={() => setMobile(true)}><Menu className="size-5" /></button><img src="/assets/favicon.svg" alt="" className="size-5" /><span className="text-sm font-semibold">Claudex</span></div>
       {error && <div role="status" className="flex items-center gap-2 border-b border-line bg-code px-5 py-2 text-xs text-muted"><Unplug className="size-3.5" />{error}<button className="ml-auto underline underline-offset-2" onClick={() => void refresh()}>Retry</button></div>}
-      {selected ? <SessionView key={selected} id={selected} summary={sessions.find(s => s.id === selected)} connected={snapshot?.connection.connected} onChange={refresh} pinned={pins.includes(selected)} togglePin={() => togglePin(selected)} select={go} launchChild={() => { setLaunchParent(sessions.find(s => s.id === selected)); setDialog("launch"); }} /> : <Overview sessions={shown} loading={!snapshot} onSelect={go} connection={snapshot?.connection} setup={() => setDialog("setup")} archived={archived} setArchived={setArchived} filtered={Boolean(query || status || workspace)} clear={clear} />}
+      {selected ? <SessionWorkspace key={selected} sessions={sessions} id={selected} summary={sessions.find(s => s.id === selected)} connected={snapshot?.connection.connected} onChange={refresh} pinned={pins.includes(selected)} togglePin={() => togglePin(selected)} select={go} launchChild={() => { setLaunchParent(sessions.find(s => s.id === selected)); setDialog("launch"); }} /> : <Overview sessions={shown} loading={!snapshot} onSelect={go} connection={snapshot?.connection} setup={() => setDialog("setup")} archived={archived} setArchived={setArchived} filtered={Boolean(query || status || workspace)} clear={clear} />}
     </main>
     {dialog === "setup" && <Setup connection={snapshot?.connection} close={() => setDialog(null)} />}
     {dialog === "launch" && <Launch parent={launchParent} close={() => setDialog(null)} launched={id => { setDialog(null); void refresh(); go(id); }} />}

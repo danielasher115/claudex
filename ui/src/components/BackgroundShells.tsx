@@ -5,9 +5,10 @@ import { api } from "../api";
 interface Shell { processId: string; itemId: string; command: string; cwd: string; osPid?: number | null; cpuPercent?: number | null; rssKb?: number | null }
 interface Shells { status: string; items: Shell[]; scope?: string; message?: string; partial?: boolean }
 
-export function BackgroundShells({ sessionId }: { sessionId: string }) {
+export function BackgroundShells({ sessionId, enabled = true }: { sessionId: string; enabled?: boolean }) {
   const [result, setResult] = useState<{ sessionId: string; data: Shells } | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
@@ -22,7 +23,7 @@ export function BackgroundShells({ sessionId }: { sessionId: string }) {
     };
     void poll();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [sessionId]);
+  }, [sessionId, enabled]);
   const data = result?.sessionId === sessionId ? result.data : null;
   if (!data || data.status === "available" && !data.items.length && !data.partial) return null;
   const available = data.status === "available";

@@ -335,3 +335,16 @@ def test_decoded_unc_links_are_rejected_before_filesystem_resolution(monkeypatch
     monkeypatch.setattr(links, 'host_path', reject_access)
     with pytest.raises(links.FileLinkError, match='Remote file links'):
         links.local_path(href, '/workspace', 'http://localhost:8767')
+
+
+def test_markdown_image_sources_can_be_previewed_without_authorizing_code_examples(tmp_path):
+    from PIL import Image
+    image = tmp_path / "screenshot.png"
+    Image.new("RGB", (2, 2)).save(image)
+    text = f"![Screenshot]({image})\n\n`![Private](private.png)`"
+    app = setup(tmp_path, text)
+    with TestClient(app, base_url="http://localhost:8767") as client:
+        response = preview(client, str(image))
+        assert response.status_code == 200, response.text
+        assert response.json()["kind"] == "image"
+        assert preview(client, "private.png").status_code == 403
