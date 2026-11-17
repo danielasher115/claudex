@@ -52,7 +52,7 @@ class Tasks:
             mode, delivery_status = receipt.get("mode", "queue"), receipt["status"]
             meta.update(messageId=receipt["id"], deliveryMode=mode, deliveryStatus=delivery_status)
             if delivery_status == "queued":
-                message = "Steering queued for delivery to the active turn" if mode == "steer" else "Message queued for the next turn"
+                message = "Steering queued for delivery to the active turn" if mode == "steer" else "Message queued until current work finishes; follow-up iteration may wait a long time"
             elif delivery_status == "sending":
                 message = "Sending steering to the active turn" if mode == "steer" else "Sending the queued message"
             elif delivery_status == "delivered" and turn_id:

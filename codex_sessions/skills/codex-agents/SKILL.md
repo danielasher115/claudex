@@ -100,6 +100,21 @@ credentials and model internals are not impersonated. Report missing capabilitie
 
 ## Continue, observe and collect
 
+### Steer during current work; queue a later iteration
+
+**Steer is the go-to for an active agent.** It submits your message right away without stopping the agent or interrupting its current
+tool call. Codex reads the guidance at a native input boundary while the same work continues. Use steering for corrections, answers,
+extra context, and requirements that should affect the current run. Prefer omitting `mode`, which steers active work and starts a new
+iteration if the agent is already idle. Explicit `mode:"steer"` requires an active run.
+
+**Queue deliberately waits until current work finishes.** After the agent becomes idle, the queued message starts a follow-up
+iteration. A run can contain many tool calls and waits, so queue can mean waiting a long time. It is not delivery after the next tool
+call, reasoning step, or short conversational turn. Choose `mode:"queue"` only when that later iteration is what you want.
+
+The receipt's delivery status `queued` can also briefly describe steering pending delivery. Read `mode` together with `status`:
+`mode:"steer"` targets current work; `mode:"queue"` waits for current work to finish. To bring an already queued follow-up into
+current work, use `agents_steer` on its existing message handle rather than cancelling and resending it.
+
 - `agents_list` returns compact live agents by default: active, idle and starting sessions, excluding archived history.
 - Completed gateway agents with no queued follow-ups are automatically unsubscribed. Native Codex unloads them after its inactivity grace period; a saved thread remains resumable with `agents_send`. Another client's subscription can keep it loaded. Result and transcript reads do not reload it.
   Use `filter:"saved"` for unloaded saved sessions, `filter:"archived"` for archived sessions, or `filter:"all"` for every status.
@@ -119,8 +134,8 @@ credentials and model internals are not impersonated. Report missing capabilitie
 - Send immediate guidance with `agents_send({"thread_id":"...","text":"..."})`. **Steering is the default while the agent is active**:
   the bridge reads its current turn and binds delivery to that exact turn. An idle worker starts a new turn through the normal queue.
   This default applies to `codex-reply` too. Reconnect an already-running Codex MCP to load the updated bridge and tool definitions.
-- To defer work until the current turn ends, explicitly use
-  `agents_send({"thread_id":"...","text":"...","mode":"queue"})`. Queue is always an intentional choice for an active worker.
+- To wait until the current work finishes and start a follow-up iteration, explicitly use
+  `agents_send({"thread_id":"...","text":"...","mode":"queue"})`. Queue is an intentional choice that can wait a long time.
   Preserve its `message_id` and pass that to `agents_wait` or `agents_result` to target this exact follow-up.
 - For strict steering, use `mode:"steer"`; an idle agent is an error. To target a particular turn, read `agents_status` and pass
   its `active_turn_id` as `expected_turn_id`. If the target changes or finishes during delivery, steering fails rather than becoming

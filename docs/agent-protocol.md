@@ -93,8 +93,13 @@ A preparation manifest records what was extracted and supplied; it cannot prove 
 
 ## Message delivery and retries
 
-`agents.send` steers the observed active turn by default. If the agent is idle, it queues a new turn for the gateway worker.
-Use `mode: "queue"` to defer a follow-up until current work finishes. Use `mode: "steer"` when absence of an active turn must be an error.
+`agents.send` normally steers: it submits guidance now into the active run without stopping the agent or interrupting its current
+tool call. Codex reads the guidance at a native input boundary. Use this for corrections, answers, extra context, and new requirements
+that should influence the work already underway. If the agent is idle, omitting mode starts a new iteration.
+
+Choose `mode: "queue"` only when the message should wait until the agent finishes its current work and becomes idle, then start a
+follow-up iteration. This can be a long wait: a run may contain many tool calls and waits. Queue does not mean delivery after the
+next tool call, reasoning step, or conversational message. Use explicit `mode: "steer"` when an idle agent must be an error.
 
 An optional `expected_turn_id` targets a specific turn. Omitted targets bind to the currently observed turn. A changed or unresolved
 active turn fails instead of targeting newer work. The dashboard composer keeps its own Queue/Steer selection.

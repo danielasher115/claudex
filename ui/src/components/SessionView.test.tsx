@@ -49,12 +49,12 @@ test("steer is the default and idle sends still start the next turn", async () =
 });
 
 test("delivery selection persists globally across sessions and reloads", async () => {
-  const first = await open(); chooseMode("Queue next turn");
+  const first = await open(); chooseMode("After current work");
   expect(localStorage.getItem("delivery-mode")).toBe("queue"); first.unmount();
   session = { ...session, id: "b" };
   const second = render(<SessionView {...props} id="b" />);
   await screen.findByText("This conversation is ready");
-  expect(within(screen.getByRole("combobox", { name: "Delivery mode" })).getByText("Queue next turn")).toBeTruthy();
+  expect(within(screen.getByRole("combobox", { name: "Delivery mode" })).getByText("After current work")).toBeTruthy();
   chooseMode("Steer now"); second.unmount(); await open();
   expect(within(screen.getByRole("combobox", { name: "Delivery mode" })).getByText("Steer now")).toBeTruthy();
 });

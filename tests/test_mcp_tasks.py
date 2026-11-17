@@ -130,7 +130,7 @@ def test_cancellation_follows_the_receipt_when_queue_delivery_races_it():
 
 
 @pytest.mark.parametrize("mode,status,words", [
-    ("queue", "queued", ("queued", "next turn")),
+    ("queue", "queued", ("queued", "current work finishes", "follow-up iteration")),
     ("queue", "sending", ("sending", "queued")),
     ("queue", "delivered", ("queued message delivered",)),
     ("steer", "queued", ("steering", "queued")),

@@ -29,7 +29,7 @@ INSTRUCTIONS = (
     "and return only changed states or final reports. Do not print full responses or keep polling Claude for unchanged progress. "
     "Tools return structuredContent and compatible JSON text; errors have isError=true. "
     "Recover lost handles with agents_list (newest first; filter=all for history), then observational agents_attach; do not relaunch accepted work. "
-    "agents_send steers active work by default; mode=queue defers. agents_steer sends an existing queued message without resending it. "
+    "Prefer agents_send steering: submit guidance now without stopping the active run. Codex reads it at an input boundary. mode=queue waits until current work finishes before starting a follow-up iteration, possibly much later; choose it only intentionally. agents_steer delivers an existing queued message into current work without resending it. "
     "Use exact turn/message cancellation or tasks/cancel for one task, agents_stop for an agent and descendants. "
     "Approval requests remain with the original native client. Never automatically accept them. "
     "The installed skill/hook settings reload live; reconnect only this MCP through /mcp after server/tool updates, retaining the conversation."
