@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import json
 import time
 
 import pytest
@@ -16,7 +18,7 @@ def snapshot_service(tmp_path, rows):
 
 def row(session_id, status="idle", **fields):
     return {"id": session_id, "title": f"Worker {session_id}", "status": status, "cwd": "/repo", "model": "model",
-            "parent_id": "parent", "origin": "appServer", "updated_at": 42, "archived": False,
+            "parent_id": "parent", "origin": "appServer", "created_at": 10, "updated_at": 42, "archived": False,
             "preview": "Private prompt", "activity": {"text": "Verbose activity"}, "tokens": 123, **fields}
 
 
@@ -25,16 +27,16 @@ def test_agent_list_defaults_to_compact_live_rows(tmp_path):
                                            row("saved", "saved"), row("offline", "unavailable"), row("external", "external"),
                                            row("archived", "active", archived=True)])
     result = asyncio.run(instance.protocol.dispatch("agents.list", {}))
-    assert [agent["thread_id"] for agent in result["agents"]] == ["active", "idle", "starting"]
-    assert result["agents"][0] == {"thread_id": "active", "id": "active", "name": "Worker active", "status": "active",
-                                    "cwd": "/repo", "model": "model", "parent_id": "parent", "origin": "appServer", "updated_at": 42}
+    assert [agent["thread_id"] for agent in result["agents"]] == ["starting", "idle", "active"]
+    assert result["agents"][-1] == {"thread_id": "active", "id": "active", "name": "Worker active", "status": "active",
+                                    "cwd": "/repo", "model": "model", "parent_id": "parent", "origin": "appServer", "created_at": 10, "updated_at": 42}
     assert result["connection"] == {"connected": True, "error": None}
     assert result["count"] == 3
     assert result["next_cursor"] is None
 
 
 @pytest.mark.parametrize(("selection", "expected"), [("live", ["live"]), ("saved", ["saved"]),
-                                                     ("archived", ["archived"]), ("all", ["archived", "live", "offline", "saved"])])
+                                                     ("archived", ["archived"]), ("all", ["saved", "offline", "live", "archived"])])
 def test_agent_list_filter_selects_history_only_when_requested(tmp_path, selection, expected):
     instance = snapshot_service(tmp_path, [row("live"), row("saved", "saved"), row("offline", "unavailable"),
                                            row("archived", "saved", archived=True)])
@@ -43,11 +45,12 @@ def test_agent_list_filter_selects_history_only_when_requested(tmp_path, selecti
 
 
 def test_agent_list_pages_remain_stable_after_earlier_rows_are_removed_or_updated(tmp_path):
-    instance = snapshot_service(tmp_path, [row("d"), row("b"), row("c"), row("a")])
+    instance = snapshot_service(tmp_path, [row("d", created_at=100), row("b", created_at=300),
+                                           row("c", created_at=200), row("a", created_at=400)])
     first = asyncio.run(instance.protocol.dispatch("agents.list", {"limit": 2}))
     assert [agent["thread_id"] for agent in first["agents"]] == ["a", "b"]
     assert isinstance(first["next_cursor"], str)
-    instance.cached["sessions"] = [row("b", updated_at=999), row("d"), row("c")]
+    instance.cached["sessions"] = [row("b", created_at=300, updated_at=999), row("d", created_at=100), row("c", created_at=200)]
     second = asyncio.run(instance.protocol.dispatch("agents.list", {"limit": 2, "cursor": first["next_cursor"]}))
     assert [agent["thread_id"] for agent in second["agents"]] == ["c", "d"]
     assert second["count"] == 2
@@ -64,8 +67,32 @@ def test_agent_list_default_and_maximum_page_sizes(tmp_path):
     maximum = asyncio.run(instance.protocol.dispatch("agents.list", {"limit": 100}))
     assert len(maximum["agents"]) == 100
     last = asyncio.run(instance.protocol.dispatch("agents.list", {"limit": 100, "cursor": maximum["next_cursor"]}))
-    assert [agent["thread_id"] for agent in last["agents"]] == ["worker-100"]
+    assert [agent["thread_id"] for agent in last["agents"]] == ["worker-000"]
     assert last["next_cursor"] is None
+
+
+def test_agent_list_pages_newest_first_with_ties_and_scrambled_input(tmp_path):
+    instance = snapshot_service(tmp_path, [row("c", created_at=20), row("z", created_at=10, updated_at=9999),
+                                           row("a", created_at=30), row("b", created_at=20), row("d", created_at=20)])
+    found, cursor = [], None
+    while True:
+        page = asyncio.run(instance.protocol.dispatch("agents.list", {"limit": 2, **({"cursor": cursor} if cursor else {})}))
+        found.extend(agent["thread_id"] for agent in page["agents"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+        instance.cached["sessions"].reverse()
+    assert found == ["a", "d", "c", "b", "z"]
+
+
+@pytest.mark.parametrize("key", [[1, "live", "a"], [2, "all", 10, "a"], [2, "live", True, "a"],
+                                 [2, "live", "10", "a"], [2, "live", float("nan"), "a"],
+                                 [2, "live", float("inf"), "a"], [2, "live", 10, ""]])
+def test_agent_list_rejects_old_or_invalid_sort_cursors(tmp_path, key):
+    instance = snapshot_service(tmp_path, [])
+    cursor = base64.urlsafe_b64encode(json.dumps(key).encode()).decode()
+    with pytest.raises(ValueError, match="cursor"):
+        asyncio.run(instance.protocol.dispatch("agents.list", {"cursor": cursor}))
 
 
 @pytest.mark.parametrize("params", [{"limit": 0}, {"limit": 101}, {"limit": True}, {"limit": 2.5}, {"limit": "2"},

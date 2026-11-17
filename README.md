@@ -26,6 +26,7 @@ before switching to the live dashboard.
 - **A reviewable handoff.** Read messages and tool output, inspect per-run unified or split diffs, and preview supported attachments.
 - **Context you can inspect.** See inherited instructions, memories, skills, model settings, and the runtime's available integrations.
 - **Plan usage at a glance.** See native account allowances, scheduled reset times, and earned reset credits. Redeem a reset with confirmation.
+- **Compact agent monitoring.** Newest-first discovery, bounded status summaries, explicit full details, and Code Mode batching guidance.
 - **One gateway for every caller.** The dashboard, CLI, MCP clients, and agent delegation tools share the same local state and delivery rules.
 
 ## Quick start

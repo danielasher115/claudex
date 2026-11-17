@@ -21,10 +21,10 @@ export function orderSessions(sessions: Session[], previous: Map<string, RunPosi
     const finishedRun = before?.running && !running;
     const unseenRun = !before && running && previous.size > 0;
     const missedRun = before && !running && changedTurn && !before.awaitingTurn;
-    const position = before?.position ?? (running ? startedAt ?? session.updated_at : session.updated_at);
+    const completedAt = ["completed", "failed", "interrupted", "cancelled"].includes(session.activity?.phase ?? "") ? session.activity?.last_event_at : null;
+    const position = before?.position ?? ((!running ? completedAt : null) ?? startedAt ?? session.created_at ?? session.updated_at);
     positions.set(session.id, { running, turnId, startedAt: olderTurn ? before!.startedAt : startedAt ?? before?.startedAt ?? null, position, awaitingTurn });
     if (newRun || finishedRun || unseenRun || missedRun) {
-      const completedAt = ["completed", "failed", "interrupted", "cancelled"].includes(session.activity?.phase ?? "") ? session.activity?.last_event_at : null;
       promotions.push({ id: session.id, at: running ? (awaitingTurn ? session.updated_at : startedAt ?? session.updated_at) : completedAt ?? session.updated_at, index });
     }
   });

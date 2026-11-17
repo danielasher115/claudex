@@ -1,6 +1,16 @@
 import type { Item } from "./api";
+import { timestamp } from "./time";
 
 export const itemRecord = (item: Item) => (item.type === "record" ? item.record : item) as Record<string, unknown>;
+
+export function itemTime(item: Item): number | null {
+  const record = itemRecord(item);
+  for (const value of [item._started_at, item.startedAtMs, item.timestamp, record.timestamp]) {
+    const at = timestamp(value);
+    if (at !== null) return at;
+  }
+  return null;
+}
 
 export function isFinal(item: Item) {
   const record = itemRecord(item);
@@ -39,7 +49,8 @@ export function groupTranscript(items: Item[], metadata: Item[] = items): Transc
 }
 
 export function workDuration(block: WorkBlock, now: number): number | null {
-  const start = typeof block.turn?.started_at === "number" ? block.turn.started_at : block.items.find(item => typeof item._started_at === "number")?._started_at;
-  const end = typeof block.final?._started_at === "number" ? block.final._started_at : block.active ? now : !block.final && typeof block.turn?.completed_at === "number" ? block.turn.completed_at : null;
-  return typeof start === "number" && typeof end === "number" ? Math.max(0, end - start) : null;
+  const start = timestamp(block.turn?.started_at) ?? block.items.map(itemTime).find(at => at !== null) ?? null;
+  const end = block.final ? itemTime(block.final) ?? timestamp(block.turn?.completed_at) : block.active ? timestamp(now) : timestamp(block.turn?.completed_at);
+  if (start !== null && end !== null) return Math.max(0, end - start) / 1000;
+  return !block.active && typeof block.turn?.duration_ms === "number" && Number.isFinite(block.turn.duration_ms) ? Math.max(0, block.turn.duration_ms) / 1000 : null;
 }

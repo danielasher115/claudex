@@ -86,7 +86,7 @@ def test_attach_unknown_thread_and_mutating_arguments_are_rejected(tmp_path):
 def test_attach_tool_requires_only_existing_thread_identity(native):
     schema = next(tool['inputSchema'] for tool in tools(native=native) if tool['name'] == 'agents_attach')
     assert schema['required'] == ['thread_id']
-    assert set(schema['properties']) == {'thread_id'}
+    assert set(schema['properties']) == {'thread_id', 'detail', 'fields'}
     assert schema['additionalProperties'] is False
 
 

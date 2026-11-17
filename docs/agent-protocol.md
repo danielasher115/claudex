@@ -107,7 +107,29 @@ Reuse a stable UUID `request_id` when retrying a launch or send. Retries preserv
 Ambiguously accepted sends become `uncertain` and are not automatically repeated. A transport disconnect is not a reason to submit
 accepted work again. MCP cancellation resolves pending launch/send ownership before stopping its agent.
 
-## Recover after a caller disconnect
+## Discover agents
+
+Agent discovery is newest first by creation time, with descending thread ID ties. The opaque cursor carries that ordering and the
+selected filter. Keep the filter when loading another page; restart discovery if a cursor from an older gateway version is rejected.
+
+## Compact observations and Code Mode
+
+`agents.status`, `agents.attach`, `agents.wait`, and `agents.result` return compact summaries by default. Final reports and structured
+results remain complete. Command strings, patches, queued-message bodies, and inherited file inventories are available explicitly;
+`details_available` identifies compacted fields, and command counts, diff availability, source warnings, and task handles remain visible.
+Pass `detail: "full"` for the complete response, or `fields: ["report", "workspace_changes"]` for exact values of selected fields.
+Identity, status, errors, and task handles are retained when selecting fields. An empty `fields` array requests handles only.
+
+MCP read tools advertise read-only and idempotency hints, and provide structured JSON plus compatible text for older clients.
+Claude Code Mode can batch independent calls, filter those values locally, and wait on saved handles without repeated discovery.
+The bundled `codex-agents` skill includes a bounded JavaScript monitoring example. No extra code interpreter runs in the gateway.
+Native Codex tools, MCP clients, and CLI calls share the same observation policy; dashboard history and internal records remain complete.
+
+Code Mode is a client feature with its own model, account, and resume requirements. See the [official Claude documentation](https://code.claude.com/docs/en/code-mode).
+It is supported for eligible direct Anthropic terminal sessions, including this MCP's ordinary launch hooks. It is unavailable through
+the separate `claude-codex` proxy launcher. Claudex remains usable through ordinary MCP calls in either setup.
+
+## Recover accepted work
 
 Accepted work belongs to the gateway and Codex runtime. Losing the Claude chat or MCP connection does not prove that the task stopped.
 Reconnect to the same gateway data directory and Codex home before trying to recover it; do not launch a replacement task automatically.

@@ -16,6 +16,7 @@ from .inheritance import conversation_inputs
 from .delivery import resolve_send
 from .turns import Turns
 from .guide import read_skill, SKILL_URI
+from .output import OBSERVATIONS, observation, validate_options
 
 VERSION = "1"
 LEVEL = {"read-only": 0, "workspace-write": 1, "danger-full-access": 2}
@@ -53,6 +54,17 @@ class Protocol:
     async def dispatch(self, method, params):
         if not isinstance(params, dict):
             raise ValueError("Protocol params must be an object")
+        if method not in OBSERVATIONS:
+            return await self._dispatch(method, params)
+        params = dict(params)
+        detail = params.pop("detail", "summary")
+        if "fields" in params and params["fields"] is None:
+            raise ValueError("fields must be an array")
+        fields = params.pop("fields", None)
+        validate_options(detail, fields)
+        return observation(await self._dispatch(method, params), detail, fields)
+
+    async def _dispatch(self, method, params):
         if method == "protocol.guide":
             return {"name": "codex-agents", "uri": SKILL_URI, "mimeType": "text/markdown", "content": read_skill()}
         if method == "artifacts.put":
@@ -140,7 +152,7 @@ class Protocol:
         limit = params.get("limit", 25)
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError("limit must be an integer between 1 and 100")
-        after = ""
+        after = None
         if "cursor" in params:
             cursor = params["cursor"]
             if not isinstance(cursor, str) or not 1 <= len(cursor) <= 4096:
@@ -149,10 +161,11 @@ class Protocol:
                 key = json.loads(base64.b64decode(cursor.encode("ascii"), altchars=b"-_", validate=True))
             except (ValueError, UnicodeError) as exc:
                 raise ValueError("Invalid agents.list cursor") from exc
-            if (not isinstance(key, list) or len(key) != 3 or type(key[0]) is not int or key[0] != 1
-                    or key[1] != selection or not isinstance(key[2], str) or not key[2]):
+            if (not isinstance(key, list) or len(key) != 4 or type(key[0]) is not int or key[0] != 2
+                    or key[1] != selection or type(key[2]) not in (int, float) or not float("-inf") < key[2] < float("inf")
+                    or not isinstance(key[3], str) or not key[3]):
                 raise ValueError("Invalid agents.list cursor for this filter")
-            after = key[2]
+            after = (key[2], key[3])
         snapshot = await self.service.sessions()
         rows = []
         for session in snapshot["sessions"]:
@@ -163,14 +176,14 @@ class Protocol:
                 continue
             if selection == "saved" and session["status"] != "saved":
                 continue
-            if session["id"] > after:
+            if after is None or (session.get("created_at") or 0, session["id"]) < after:
                 rows.append(session)
-        rows.sort(key=lambda session: session["id"])
+        rows.sort(key=lambda session: (session.get("created_at") or 0, session["id"]), reverse=True)
         page = rows[:limit]
         agents = [{"thread_id": session["id"], "id": session["id"], "name": session["title"],
-                   **{field: session.get(field) for field in ("status", "cwd", "model", "parent_id", "origin", "updated_at")}}
+                   **{field: session.get(field) for field in ("status", "cwd", "model", "parent_id", "origin", "created_at", "updated_at")}}
                   for session in page]
-        cursor = base64.urlsafe_b64encode(json.dumps([1, selection, page[-1]["id"]]).encode()).decode() if len(rows) > limit else None
+        cursor = base64.urlsafe_b64encode(json.dumps([2, selection, page[-1].get("created_at") or 0, page[-1]["id"]]).encode()).decode() if len(rows) > limit else None
         return {"agents": agents, "connection": snapshot["connection"], "count": len(agents), "next_cursor": cursor}
 
     async def native_call(self, message):

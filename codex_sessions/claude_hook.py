@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
-from .platform import configure_stdio, private_directory
+from .platform import configure_stdio, private_directory, file_lock
 from .context import capture, merge
 
 LAUNCH_TOOL = re.compile(r"^mcp__(?:codex|codex[-_]agents|codex[-_]sessions)__(?:agents_launch|codex)$")
@@ -204,16 +204,17 @@ def private_write(directory, name, payload):
     if directory.is_symlink():
         raise ValueError('The context export directory must not be a symbolic link')
     path = directory / name
-    try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    except FileExistsError:
-        if path.is_symlink() or path.read_bytes() != payload:
-            raise ValueError('A context export snapshot failed its integrity check')
-    else:
-        with os.fdopen(fd, 'wb') as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
+    with file_lock(directory / f'{name}.lock', timeout=5):
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        except FileExistsError:
+            if path.is_symlink() or path.read_bytes() != payload:
+                raise ValueError('A context export snapshot failed its integrity check')
+        else:
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
     return path.resolve()
 
 

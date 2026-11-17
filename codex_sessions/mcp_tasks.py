@@ -12,7 +12,10 @@ CANCEL_TIMEOUT = 5
 
 
 def tool_result(data, error=False):
-    return {"content": [{"type": "text", "text": json.dumps(data)}], "structuredContent": data, "isError": error}
+    result = {"content": [{"type": "text", "text": json.dumps(data)}], "isError": error}
+    if isinstance(data, dict):
+        result["structuredContent"] = data
+    return result
 
 
 def timestamp(seconds):

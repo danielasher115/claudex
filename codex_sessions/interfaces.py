@@ -1,5 +1,7 @@
 """The shared tool contract for MCP clients and Codex's native dynamic tools."""
 
+from .output import OBSERVATIONS, SELECTABLE_FIELDS
+
 PROPERTIES = {
     "prompt": {"type": "string", "description": "The complete task for the agent."},
     "name": {"type": "string"}, "cwd": {"type": "string"}, "model": {"type": "string", "description": "Exact ID from models_list, or a task-tier alias: sonnet, opus, haiku, fable. Aliases select OpenAI models, not Claude. Omit for the latest available coding workhorse."},
@@ -28,13 +30,13 @@ def tools(native=False):
         ("agents_launch", "Launch an asynchronous Codex agent. Returns a persistent thread_id immediately. Native calls create a child of the calling agent; attachments and sandbox constraints are inherited.", launch, ["prompt"]),
         ("agents_send", "Steer new guidance into an active agent by default; an idle agent starts a new turn. Choose mode=queue to wait until its current turn ends. Attach artifact IDs or local files.", {**thread, "text": {"type": "string"}, "mode": SEND_MODE, "expected_turn_id": SEND_TARGET, "attachments": PROPERTIES["attachments"], **({} if native else {"files": PROPERTIES["files"]}), "request_id": PROPERTIES["request_id"]}, ["thread_id", "text"]),
         ("agents_steer", "Send an existing queued message to the active turn now, preserving its message_id, attachments and original task handle. Read agents_status for active_turn_id and supply it as expected_turn_id. Does not create or resend a message.", {**thread, "message_id": {"type": "string"}, "expected_turn_id": {"type": "string"}}, ["thread_id", "message_id", "expected_turn_id"]),
-        ("agents_status", "Inspect an agent's runtime, queued messages and children.", thread, ["thread_id"]),
+        ("agents_status", "Inspect runtime, queued-message receipts and children with compact inheritance counts. Use fields to select exact data or detail=full for inventories and message bodies.", thread, ["thread_id"]),
         ("agents_attach", "Recover an existing same-home thread after caller disconnect: inspect current/root turns, durable task handles, children, context report, send availability and dashboard URL. Does not start/resume a turn, adopt native threads, replace context or reparent children.", thread, ["thread_id"]),
-        ("agents_wait", "Wait up to 60 seconds for the most recently submitted gateway message, or the latest native turn. A specific message_id from agents_send or turn_id can be targeted. Returns queued/running if unfinished.", {**thread, "turn_id": {"type": "string"}, "message_id": {"type": "string"}, "timeout_seconds": {"type": "number", "minimum": 0, "maximum": 60}}, ["thread_id"]),
-        ("agents_result", "Get the latest final report, changed files, commands, attachments and child references. Optionally target message_id or turn_id.", {**thread, "turn_id": {"type": "string"}, "message_id": {"type": "string"}}, ["thread_id"]),
+        ("agents_wait", "Wait up to 60 seconds for an exact message_id/turn_id or the latest submitted task. Returns compact queued/running state or the complete final report. Prefer waiting on saved handles over repeated list/status polling. Bulky details are opt-in.", {**thread, "turn_id": {"type": "string"}, "message_id": {"type": "string"}, "timeout_seconds": {"type": "number", "minimum": 0, "maximum": 60}}, ["thread_id"]),
+        ("agents_result", "Get the complete final report, changed-file metadata, attachments and child references. Optionally target message_id or turn_id. Command strings, patches and source inventories require fields or detail=full.", {**thread, "turn_id": {"type": "string"}, "message_id": {"type": "string"}}, ["thread_id"]),
         ("agents_stop", "Interrupt the agent and, by default, all its gateway descendants. Removes queued follow-ups.", {**thread, "include_children": {"type": "boolean"}}, ["thread_id"]),
         ("agents_children", "List the full gateway delegation tree below an agent.", thread, ["thread_id"]),
-        ("agents_list", "List compact local agents and connection state. Defaults to live active/idle/starting agents, excluding archived sessions. Use filter for history and next_cursor for another page, ordered by thread_id.",
+        ("agents_list", "List compact local agents newest first by creation time, then thread_id descending. Defaults to live active/idle/starting agents, excluding archived sessions. Use history filters and next_cursor for older pages; retain returned handles for monitoring.",
          {"filter": {"type": "string", "enum": ["live", "saved", "archived", "all"], "default": "live"},
           "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25},
           "cursor": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "Opaque next_cursor from the previous page; keep the same filter."}}, []),
@@ -49,4 +51,15 @@ def tools(native=False):
                        "inputSchema": {"type": "object", "properties": {**thread, "cursor": {"type": "string"}}, "required": ["thread_id"], "additionalProperties": False}})
         result += [{"name": "codex", "description": "Compatibility tool: launch Codex and wait for its answer. Use agents_launch for asynchronous delegation.", "inputSchema": {"type": "object", "properties": launch, "required": ["prompt"]}},
                    {"name": "codex-reply", "description": "Compatibility tool: steer an active Codex agent by default, otherwise start a new turn, and wait for its answer. Use mode=queue to defer.", "inputSchema": {"type": "object", "properties": {"threadId": {"type": "string"}, "conversationId": {"type": "string"}, "prompt": {"type": "string"}, "mode": SEND_MODE, "expected_turn_id": SEND_TARGET, "attachments": PROPERTIES["attachments"], "files": PROPERTIES["files"]}, "required": ["prompt"]}}]
+    reads = {"protocol_guide", "models_list", "agents_status", "agents_attach", "agents_wait", "agents_result", "agents_children", "agents_list", "agents_transcript", "artifacts_get"}
+    for tool in result:
+        if tool["name"].replace("_", ".", 1) in OBSERVATIONS:
+            tool["inputSchema"]["properties"].update({
+                "detail": {"type": "string", "enum": ["summary", "full"], "default": "summary", "description": "Summary omits bulky inventories, queued-message text, commands and patches without truncating final reports. Full retrieves all details."},
+                "fields": {"type": "array", "maxItems": 32, "items": {"type": "string", "enum": sorted(SELECTABLE_FIELDS)}, "description": "Return exact full values for selected fields, plus identity/status/error handles. Overrides detail; [] returns handles only."},
+            })
+        if not native:
+            tool["annotations"] = {"readOnlyHint": tool["name"] in reads, "idempotentHint": tool["name"] in reads}
+            if tool["name"] != "agents_children":
+                tool["outputSchema"] = {"type": "object", "additionalProperties": True}
     return result

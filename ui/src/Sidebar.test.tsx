@@ -11,7 +11,7 @@ const titles = () => within(screen.getByRole("navigation", { name: "Sessions" })
 beforeEach(() => {
   localStorage.clear(); history.replaceState(null, "", "/");
   const base: Session = { id: "old", title: "Run active", preview: "queue", cwd: "/repos/platform", model: "codex", source: "claude", origin: "mcp", status: "active", flags: [], created_at: 1, updated_at: 10, archived: false, can_send: true, reason: null, revision: "one", messages: [] };
-  sessions = [base, { ...base, id: "new", title: "Run newest", status: "idle", updated_at: 30 }, { ...base, id: "middle", title: "Run middle", cwd: "/repos/desktop", status: "idle", updated_at: 20 }, { ...base, id: "external", title: "Run external", source: "desktop", status: "idle", updated_at: 40 }];
+  sessions = [base, { ...base, id: "new", title: "Run newest", status: "idle", created_at: 30, updated_at: 130 }, { ...base, id: "middle", title: "Run middle", cwd: "/repos/desktop", status: "idle", created_at: 20, updated_at: 200 }, { ...base, id: "external", title: "Run external", source: "desktop", status: "idle", created_at: 40, updated_at: 40 }];
   vi.stubGlobal("EventSource", class { onmessage?: (event: { data: string }) => void; constructor() { events = this; } close() {} });
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
   HTMLElement.prototype.showPopover = vi.fn();
@@ -89,7 +89,7 @@ test("Overview is above search and secondary filters stay collapsed until reques
 
 test("running rows move only when a new run starts, and finished rows move below the running group", () => {
   sessions = sessions.filter(session => session.source === "claude").map(session => session.id === "new" ? { ...session, status: "active" } : session);
-  sessions.push({ ...sessions[2], id: "history", title: "Run history", updated_at: 25 });
+  sessions.push({ ...sessions[2], id: "history", title: "Run history", created_at: 25, updated_at: 250 });
   render(<App />); publish();
   fireEvent.click(screen.getByRole("button", { name: "Recent" }));
   expect(titles()).toEqual(["Run newest", "Run active", "Run history", "Run middle"]);

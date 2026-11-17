@@ -103,13 +103,17 @@ credentials and model internals are not impersonated. Report missing capabilitie
 - `agents_list` returns compact live agents by default: active, idle and starting sessions, excluding archived history.
 - Completed gateway agents with no queued follow-ups are automatically unsubscribed. Native Codex unloads them after its inactivity grace period; a saved thread remains resumable with `agents_send`. Another client's subscription can keep it loaded. Result and transcript reads do not reload it.
   Use `filter:"saved"` for unloaded saved sessions, `filter:"archived"` for archived sessions, or `filter:"all"` for every status.
-  Pages are ordered by `thread_id`, with `limit` defaulting to 25 and bounded to 1-100. Pass `next_cursor` as `cursor` with the same filter
+  Pages show newest `created_at` first, then `thread_id` descending, with `limit` defaulting to 25 and bounded to 1-100. Pass `next_cursor` as `cursor` with the same filter
   to continue; a null cursor means the last page. `count` is the number of agents in this page, and `connection` reports runtime availability.
-  Rows contain `thread_id` (`id` is a compatibility alias), `name`, `status`, `cwd`, `model`, `parent_id`, `origin` and `updated_at`.
+  Rows contain `thread_id` (`id` is a compatibility alias), `name`, `status`, `cwd`, `model`, `parent_id`, `origin`, `created_at` and `updated_at`.
   Use `agents_status` or `agents_transcript` when more detail is needed.
 - Save the returned `thread_id` and `turn_id`. For MCP task-capable clients, save the returned `taskId` instead and use `tasks/get`.
 - Continue independent parent work. `agents_wait` waits at most 60 seconds per call and can return `queued`, `starting` or `running`.
-- Retrieve `agents_result` for the final report, changed files, commands, attachments, child references and structured JSON.
+- Retrieve `agents_result` for the complete final report, changed-file metadata, attachments, child references and structured JSON.
+  Observation tools (`agents_status`, `agents_attach`, `agents_wait`, `agents_result`) default to compact summaries. Full queued-message
+  bodies, inherited source inventories, command strings and patches are omitted explicitly in `details_available`; nothing is truncated.
+  Use `detail:"full"` for the complete response or `fields:["commands","workspace_changes"]` for exact full values of selected fields.
+  Identity, status, error and task handles remain available when selecting fields, including `fields:[]` for a minimal correlation receipt.
   Lifecycle status `completed` means generation ended; assess the report for actual task completion.
 - Use `agents_transcript` with `thread_id` and then `next_cursor` as `cursor` to read older recorded history when needed.
 - Send immediate guidance with `agents_send({"thread_id":"...","text":"..."})`. **Steering is the default while the agent is active**:
@@ -129,6 +133,45 @@ credentials and model internals are not impersonated. Report missing capabilitie
   A stale target leaves the original message queued. A failed or uncertain delivery is not retried automatically.
 
 The compatibility tools `codex` and `codex-reply` wait for a result. Prefer the asynchronous tools when the parent should keep working.
+
+## Code Mode and efficient monitoring
+
+Claudex uses ordinary MCP tools, machine-readable `structuredContent`, compatible JSON text, and read-only annotations for inspection
+tools. Claude Code's Code Mode can batch these calls and filter responses before they enter the model context. PreToolUse hooks still
+run under each MCP tool's normal name, so the installed launch hook continues to export the exact caller's inheritance.
+
+Code Mode is a Claude client capability, not another interpreter hosted by this MCP. It requires a supported direct Anthropic terminal
+session; it is unavailable through the separate `claude-codex` proxy launcher, cloud providers, `claude -p`, and the Agent SDK.
+See [Claude Code Mode](https://code.claude.com/docs/en/code-mode) for current requirements and resume restrictions.
+
+Save handles when launching or recovering work. Call `agents_list` once when discovering workers, then follow those handles. Do not
+re-enumerate the full saved history or print full status, attach and command payloads while checking progress. Read this guide once per
+working session. Polling repeatedly at the model level resends the accumulated context even when most tokens are cache hits.
+
+For a Code Mode batch, keep the wait loop in JavaScript and return final reports or a bounded running state. This example observes
+existing workers and does not launch or resend work. Preserve exact `message_id` or `turn_id` targets too when monitoring a specific task.
+
+```javascript
+const parse = value => typeof value === "string" ? JSON.parse(value) : value;
+const handles = ["saved-thread-id-1", "saved-thread-id-2"];
+const results = await Promise.allSettled(handles.map(async thread_id => {
+  let result;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    result = parse(await tools.mcp__codex__agents_wait({
+      thread_id, timeout_seconds: 60, fields: ["status", "report", "error", "turn_id"]
+    }));
+    if (!["queued", "starting", "running"].includes(result.status)) break;
+  }
+  return result;
+}));
+results.map((result, index) => result.status === "fulfilled"
+  ? { thread_id: handles[index], ...result.value }
+  : { thread_id: handles[index], error: String(result.reason) });
+```
+
+An MCP client that exposes structured content directly can read `structuredContent`; use the host's actual return shape rather than
+parsing human error messages as JSON. Inspect errors before retrying. Never relaunch accepted work or resend uncertain delivery to
+recover from a parsing error. For independent parent work, let the batch continue in the client's background execution facility.
 
 ## Recover an existing agent
 

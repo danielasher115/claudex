@@ -156,3 +156,56 @@ test("multiple completed calls share one collapsed group while a single call is 
   fireEvent.click(toggle);
   expect(screen.getAllByRole("button", { name: /Terminal/ })).toHaveLength(2);
 });
+
+test("prompts show native local times and long gaps get quiet separators without opening tools", () => {
+  const first = Date.parse("2026-11-17T12:00:00Z") / 1000;
+  const { container } = render(<Transcript items={[
+    { ...marker, started_at: first, completed_at: first + 15 },
+    { ...user, _started_at: first }, command, { ...final, _started_at: first + 9 },
+    { ...marker, id: "turn-next", turn_id: "next", started_at: first + 3600 },
+    { ...user, id: "u-next", turn_id: "next", content: [{ type: "text", text: "Continue checking" }] },
+  ]} />);
+  const times = container.querySelectorAll(".message-user time");
+  expect(times).toHaveLength(2);
+  expect(times[0].getAttribute("datetime")).toBe("2026-11-17T12:00:00.000Z");
+  expect(times[1].getAttribute("datetime")).toBe("2026-11-17T13:00:00.000Z");
+  expect(times[1].getAttribute("title")).toContain("Turn started");
+  expect(container.querySelectorAll("[data-timeline-separator]")).toHaveLength(2);
+  expect(container.querySelectorAll("[data-timeline-separator]")[1].textContent).toContain("later");
+  expect(screen.getByRole("button", { name: /Terminal/ }).getAttribute("aria-expanded")).toBe("false");
+});
+
+test("unknown prompt times stay absent while recorded ISO times remain available", () => {
+  const { container } = render(<Transcript items={[
+    { ...user },
+    { id: "old", type: "record", timestamp: "2026-11-17T14:05:00+02:00", record: { type: "message", role: "user", content: "Recorded prompt" } },
+  ]} />);
+  expect(container.querySelectorAll(".message-user time")).toHaveLength(1);
+  expect(container.querySelector(".message-user time")?.getAttribute("datetime")).toBe("2026-11-17T12:05:00.000Z");
+});
+
+test("turn start is only a fallback for the first prompt and full native turns keep their work recap", () => {
+  const { container } = render(<Transcript items={[
+    marker, user, { ...user, id: "steer", content: [{ type: "text", text: "Also check the timeout" }] }, command,
+    { ...final, _started_at: undefined },
+  ]} />);
+  expect(container.querySelectorAll(".message-user time")).toHaveLength(1);
+  expect(screen.getByText("Worked for 15s")).toBeTruthy();
+});
+
+
+test("an older prompt outside the visible slice prevents assigning its turn start to a steering message", () => {
+  const steer = { ...user, id: "steer", content: [{ type: "text", text: "Also check the timeout" }] };
+  const { container } = render(<Transcript items={[steer]} metadata={[marker, user, command, steer]} />);
+  expect(container.querySelector(".message-user time")).toBeNull();
+});
+
+test("long native turns use completion time when measuring the gap before the next prompt", () => {
+  const first = Date.parse("2026-11-17T12:00:00Z") / 1000;
+  const { container } = render(<Transcript items={[
+    { ...marker, started_at: first, completed_at: first + 3600 }, user, command, { ...final, _started_at: undefined },
+    { ...marker, id: "turn-next", turn_id: "next", started_at: first + 3900 },
+    { ...user, id: "next", turn_id: "next" },
+  ]} />);
+  expect(container.querySelectorAll("[data-timeline-separator]")).toHaveLength(1);
+});

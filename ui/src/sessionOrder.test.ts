@@ -7,6 +7,26 @@ const running = (id: string, started: number, updated = started, turn = id): Ses
 } as Session);
 const ids = (value: ReturnType<typeof orderSessions>) => value.sessions.map(session => session.id);
 
+test("initial rows use creation and run times instead of heartbeat timestamps", () => {
+  const sessions = [
+    { id: "old-idle", status: "idle", created_at: 100, updated_at: 900 } as Session,
+    { id: "new-idle", status: "idle", created_at: 300, updated_at: 300 } as Session,
+    { id: "old-active", status: "active", created_at: 100, updated_at: 1000 } as Session,
+    { id: "new-active", status: "active", created_at: 200, updated_at: 200 } as Session,
+  ];
+  let state = orderSessions(sessions, new Map(), 1100);
+  expect(ids(state)).toEqual(["new-active", "old-active", "new-idle", "old-idle"]);
+  state = orderSessions([...sessions].reverse().map(session => ({ ...session, updated_at: 2000 })), state.positions, 2100);
+  expect(ids(state)).toEqual(["new-active", "old-active", "new-idle", "old-idle"]);
+});
+
+test("initial completed runs use completion time and stay below active work", () => {
+  const completed = { ...running("completed", 100, 900), status: "idle", created_at: 50,
+    activity: { turn_id: "completed", turn_started_at: 100, phase: "completed", last_event_at: 400 } as AgentActivity };
+  const idle = { id: "idle", status: "idle", created_at: 300, updated_at: 1000 } as Session;
+  expect(ids(orderSessions([idle, completed, running("active", 200)], new Map(), 1100))).toEqual(["active", "completed", "idle"]);
+});
+
 test("progress stays put, a new turn in the same running session promotes once, and completions stay below running work", () => {
   let sessions = [running("a", 200), running("b", 100), { id: "c", status: "idle", updated_at: 400 } as Session];
   let state = orderSessions(sessions, new Map(), 500);

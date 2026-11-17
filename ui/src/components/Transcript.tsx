@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { reasoningOf, type Item, type Session } from "../api";
-import { groupTranscript, isFinal, itemRecord, workDuration, type WorkBlock } from "../timeline";
+import { groupTranscript, isFinal, itemRecord, itemTime, workDuration, type WorkBlock } from "../timeline";
+import { exactTime, timeSeparator, timestamp } from "../time";
 import { ConversationItem } from "./Conversation";
 
 function duration(seconds: number) {
@@ -94,19 +95,35 @@ function ToolWork({ block, expanded, matchedIds, select, session }: WorkProps) {
 
 export function Transcript({ items, metadata, expanded, matchedIds, select, session, after }: { items: Item[]; metadata?: Item[]; expanded?: boolean; matchedIds?: Set<string>; select?: (id: string) => void; session?: Session | null; after?: (item: Item) => ReactNode }) {
   const blocks = useMemo(() => groupTranscript(items, metadata), [items, metadata]);
-  const turns = new Map((metadata ?? items).filter(item => item.type === "turn").map(item => [String(item.turn_id ?? item.id), item]));
+  const { turns, firstPrompts } = useMemo(() => {
+    const turns = new Map<string, Item>(), firstPrompts = new Map<string, string>();
+    let current = "recorded";
+    for (const item of metadata ?? items) {
+      const record = itemRecord(item);
+      current = String(item.turn_id ?? record.turn_id ?? (item.type === "turn" ? item.id : current));
+      if (item.type === "turn") turns.set(current, item);
+      if ((record.type === "userMessage" || record.type === "message" && record.role === "user") && !firstPrompts.has(current)) firstPrompts.set(current, item.id);
+    }
+    return { turns, firstPrompts };
+  }, [metadata, items]);
   const last = blocks.at(-1);
   const active = [...turns.entries()].reverse().find(([, turn]) => turn.status === "inProgress");
   const currentGroup = active && last?.type === "work" && last.active && last.turnId === active[0];
   const needsThinking = Boolean(active && !currentGroup && !blocks.some(block => block.type === "item" && block.turnId === active[0] && isFinal(block.item)));
-  const seenWork = new Set<string>();
   const lastInTurn = new Map(blocks.map(block => [block.turnId, block.id]));
+  let previousTime: number | null = null;
   return <>{blocks.map(block => {
-    if (block.type === "work") seenWork.add(block.turnId);
-    const before = block.type === "item" && isFinal(block.item) && seenWork.has(block.turnId) ? workDuration({ type: "work", id: "timing", turnId: block.turnId, turn: turns.get(block.turnId), final: block.item, items: [], active: false }, 0) : null;
+    const before = block.type === "item" && isFinal(block.item) ? workDuration({ type: "work", id: "timing", turnId: block.turnId, turn: turns.get(block.turnId), final: block.item, items: [], active: false }, 0) : null;
     const turn = turns.get(block.turnId);
+    const head = block.type === "item" ? block.item : block.items[0];
+    const turnStartedAt = firstPrompts.get(block.turnId) === head.id ? turn?.started_at : undefined;
+    const at = itemTime(head) ?? timestamp(turnStartedAt);
+    const separator = timeSeparator(at, previousTime);
+    const tailTime = block.type === "work" ? itemTime(block.items.at(-1)!) : null;
+    const completedAt = block.type === "item" && isFinal(block.item) ? timestamp(turn?.completed_at) : null;
+    previousTime = completedAt ?? tailTime ?? at ?? previousTime;
     const stopped = turn?.status === "interrupted" && lastInTurn.get(block.turnId) === block.id;
     const stoppedTime = stopped ? workDuration({ type: "work", id: "stopped", turnId: block.turnId, turn, items: [], active: false }, 0) : null;
-    return <Fragment key={block.id}>{before !== null && <div className="desktop-work-duration">Worked for {duration(before)}</div>}{block.type === "item" ? <ConversationItem sessionId={session?.id} item={block.item} expanded={expanded} matched={matchedIds?.has(block.item.id)} select={select} /> : <Work block={block} expanded={expanded} matchedIds={matchedIds} select={select} session={session} />}{after?.(block.type === "item" ? block.item : block.items.at(-1)!)}{stopped && <div role="status" className="desktop-work-duration">Stopped{stoppedTime !== null ? ` after ${duration(stoppedTime)}` : ""}</div>}</Fragment>;
+    return <Fragment key={block.id}>{separator && <div className="turn-divider" data-timeline-separator title={exactTime(at)}><span className="h-px flex-1 bg-line" /><span>{separator}</span><span className="h-px flex-1 bg-line" /></div>}{before !== null && <div className="desktop-work-duration">Worked for {duration(before)}</div>}{block.type === "item" ? <ConversationItem sessionId={session?.id} item={block.item} turnStartedAt={turnStartedAt} expanded={expanded} matched={matchedIds?.has(block.item.id)} select={select} /> : <Work block={block} expanded={expanded} matchedIds={matchedIds} select={select} session={session} />}{after?.(block.type === "item" ? block.item : block.items.at(-1)!)}{stopped && <div role="status" className="desktop-work-duration">Stopped{stoppedTime !== null ? ` after ${duration(stoppedTime)}` : ""}</div>}</Fragment>;
   })}{needsThinking && <Thinking label={session?.activity?.phase.startsWith("waiting_") ? session.activity.label : "Thinking"} />}</>;
 }
