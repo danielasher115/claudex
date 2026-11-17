@@ -22,7 +22,7 @@ from .account_usage import AccountUsageError
 
 
 def source_items(items):
-    """Keep source evidence and prepared artifacts without returning tool or reasoning payloads."""
+    """Keep source and change evidence without returning commands, reasoning, or raw tool payloads."""
     def citations(values):
         result = []
         for value in values if isinstance(values, list) else []:
@@ -55,6 +55,21 @@ def source_items(items):
         kind = record.get("type")
         public = kind in ("userMessage", "agentMessage", "plan") or kind == "message" and record.get("role") in ("user", "assistant")
         source = {"id": item["id"], "type": kind}
+        if isinstance(item.get("turn_id"), str):
+            source["turn_id"] = item["turn_id"]
+        if kind == "turn":
+            source.update({key: item[key] for key in ("status", "diff", "workspace_diff", "workspace_warning") if isinstance(item.get(key), str)})
+        if kind == "fileChange":
+            if isinstance(record.get("status"), str):
+                source["status"] = record["status"]
+            source["changes"] = []
+            for change in record.get("changes", []) if isinstance(record.get("changes"), list) else []:
+                if not isinstance(change, dict) or not all(isinstance(change.get(key), str) for key in ("path", "diff")):
+                    continue
+                projected = {key: change[key] for key in ("path", "diff")}
+                if isinstance(change.get("kind"), dict):
+                    projected["kind"] = {key: change["kind"][key] for key in ("type", "move_path") if isinstance(change["kind"].get(key), str)}
+                source["changes"].append(projected)
         if kind == "message":
             source["role"] = record.get("role")
         for key in ("attachments", "images"):
@@ -79,7 +94,7 @@ def source_items(items):
                 source["action"] = {"url": action["url"]}
             source["results"] = [{key: entry[key] for key in ("url", "link", "title") if isinstance(entry.get(key), str)}
                                  for entry in record.get("results", []) if isinstance(entry, dict)] if isinstance(record.get("results"), list) else []
-        if source.keys() - {"id", "type", "role"}:
+        if kind == "turn" or source.keys() - {"id", "type", "role", "turn_id"}:
             result.append(source)
     return result
 

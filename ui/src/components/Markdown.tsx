@@ -1,9 +1,14 @@
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Children, isValidElement, type ReactNode } from "react";
 import { CopyButton } from "./shared";
 import { FileLink, isLocalFileLink } from "./FileLinks";
+
+const components: Components = {
+  pre: CodeBlock,
+  a: ({ children, href, title }) => <FileLink href={href ?? ""} title={title}>{children}</FileLink>,
+};
 
 export function fenced(text: string, language = "plaintext") {
   const longest = Math.max(2, ...[...text.matchAll(/`+/g)].map(match => match[0].length));
@@ -22,7 +27,7 @@ export function Markdown({ text }: { text: string }) {
     } catch { /* A partial streaming reply remains ordinary text until valid JSON arrives. */ }
   }
   return <div className="prose prose-stone dark:prose-invert max-w-none prose-pre:bg-code prose-pre:text-ink prose-pre:border prose-pre:border-line prose-code:before:content-none prose-code:after:content-none prose-p:my-2 prose-li:my-0.5 prose-headings:font-semibold break-words">
-    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]} urlTransform={url => isLocalFileLink(url) ? url : defaultUrlTransform(url)} components={{ pre: CodeBlock, a: ({ children, href, title }) => <FileLink href={href ?? ""} title={title}>{children}</FileLink> }}>{displayed}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]} urlTransform={url => isLocalFileLink(url) ? url : defaultUrlTransform(url)} components={components}>{displayed}</ReactMarkdown>
   </div>;
 }
 

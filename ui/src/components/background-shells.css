@@ -1,0 +1,23 @@
+.composer-shell-group {
+  position: relative;
+  isolation: isolate;
+}
+
+.composer-shell-group > .composer {
+  position: relative;
+  z-index: 1;
+}
+
+.background-shells {
+  position: relative;
+  margin-bottom: -12px;
+  padding-bottom: 12px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--sidebar);
+}
+
+.background-shells > summary::-webkit-details-marker {
+  display: none;
+}

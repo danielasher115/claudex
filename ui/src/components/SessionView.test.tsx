@@ -89,6 +89,37 @@ test("the context ring uses the latest native total and the recorded window", as
   expect(request.mock.calls.every(([url]) => !url.includes("/details"))).toBe(true);
 });
 
+test("the context tooltip escapes a clipped pane and follows its ring while focused or hovered", async () => {
+  contextUsage = { last: { total_tokens: 500 }, model_context_window: 1000 };
+  const view = await open();
+  view.container.style.overflow = "hidden";
+  const meter = screen.getByRole("meter", { name: "Context window" });
+  const tooltip = screen.getByRole("tooltip");
+  let left = 600;
+  vi.stubGlobal("innerWidth", 800);
+  vi.spyOn(meter, "getBoundingClientRect").mockImplementation(() => ({ left, top: 500, width: 28, height: 28, right: left + 28, bottom: 528, x: left, y: 500, toJSON: () => ({}) }));
+  Object.defineProperty(tooltip, "offsetWidth", { configurable: true, value: 256 });
+  Object.defineProperty(tooltip, "offsetHeight", { configurable: true, value: 120 });
+  fireEvent.focus(meter);
+  expect(view.container.contains(tooltip)).toBe(false);
+  expect(document.body.contains(tooltip)).toBe(true);
+  expect(tooltip.style.left).toBe("486px");
+  expect(tooltip.style.top).toBe("368px");
+  left = 750; fireEvent.scroll(view.container);
+  expect(tooltip.style.left).toBe("536px");
+  expect(tooltip.style.getPropertyValue("--tooltip-arrow-x")).toBe("227px");
+  vi.stubGlobal("innerWidth", 1000); fireEvent.resize(window);
+  expect(tooltip.style.left).toBe("636px");
+  expect(tooltip.style.getPropertyValue("--tooltip-arrow-x")).toBe("127px");
+  fireEvent.mouseEnter(meter); fireEvent.blur(meter);
+  left = 0; fireEvent.resize(window);
+  expect(tooltip.style.left).toBe("8px");
+  expect(tooltip.style.getPropertyValue("--tooltip-arrow-x")).toBe("5px");
+  fireEvent.mouseLeave(meter);
+  left = 300; fireEvent.scroll(view.container);
+  expect(tooltip.style.left).toBe("8px");
+});
+
 test("unknown context usage never turns cumulative session tokens into a context total", async () => {
   session = { ...session, tokens: 9000000 }; await open();
   expect(screen.queryByRole("meter")).toBeNull();

@@ -308,12 +308,12 @@ body {
   .earlier-button { @apply mx-auto mb-4 mt-2 flex items-center justify-center gap-2 rounded-lg border border-line px-4 py-2 text-[11px] text-faint hover:bg-hover; }
   .jump-latest { @apply absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-line bg-panel px-3 py-2 text-[11px] shadow-sm hover:bg-hover; }
   .composer-area { @apply shrink-0 bg-surface pb-4 pt-2; }
-  .context-tooltip { margin-left: var(--tooltip-shift, 0px); max-width: calc(100vw - 16px); }
+  .context-tooltip { max-width: calc(100vw - 16px); }
   .context-tooltip::after {
     content: "";
     position: absolute;
     bottom: -5px;
-    left: calc(50% - var(--tooltip-shift, 0px));
+    left: var(--tooltip-arrow-x, 50%);
     width: 10px;
     height: 10px;
     background: var(--panel);

@@ -2,11 +2,13 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Changes } from "./Changes";
 import { DiffFile } from "./Diff";
-import { diffFiles, type RunChanges } from "../changes";
+import { FAMILY_CHANGES_ID, familyRunId, diffFiles, type RunChanges } from "../changes";
 
 const patch = "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -10,2 +20,2 @@\n keep\n-old code\n+new code\n";
 const run: RunChanges = { id: "run-one", prompt: "Fix the app", status: "completed", files: diffFiles(patch), source: "native", lastItemId: "last" };
 beforeEach(() => {
+  HTMLElement.prototype.showPopover = vi.fn(function (this: HTMLElement) { this.style.display = "block"; });
+  HTMLElement.prototype.hidePopover = vi.fn(function (this: HTMLElement) { this.style.display = "none"; });
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
 });
@@ -61,4 +63,27 @@ test("per-file diffs collapse without mounting their code and preserve copy cont
 test("runs without patches state that no file changes were recorded", () => {
   render(<Changes runs={[{ ...run, files: [] }]} initialRun={run.id} close={vi.fn()} />);
   expect(screen.getByText("No file changes recorded for this run")).toBeTruthy();
+});
+
+test("all agents preserves overlapping paths and allows each agent run to be reviewed separately", () => {
+  const owned = ["Manager", "Worker"].map((name, index) => {
+    const owner = { sessionId: `agent-${index}`, name, cwd: `/worktree/${name}` };
+    return { ...run, id: familyRunId(owner.sessionId, run.id), originalRunId: run.id, owner, files: diffFiles(patch.replace("new code", `${name} code`)).map(file => ({ ...file, owner })) };
+  });
+  const all: RunChanges = { ...run, id: FAMILY_CHANGES_ID, prompt: "All agents", aggregate: true, files: owned.flatMap(value => value.files) };
+  render(<Changes embedded runs={[all, ...owned]} initialRun={FAMILY_CHANGES_ID} close={vi.fn()} />);
+  expect(screen.getByText("2 file changes")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Copy run diff" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Copy diff" })).toBeTruthy();
+  const files = screen.getByRole("navigation", { name: "Changed files" });
+  expect(within(files).getByText("/worktree/Manager")).toBeTruthy();
+  fireEvent.click(within(files).getByRole("button", { name: "Worker: src/app.ts" }));
+  expect(screen.getByRole("table").textContent).toContain("Worker code");
+  fireEvent.click(screen.getByRole("combobox", { name: "Run" }));
+  fireEvent.click(screen.getByRole("option", { name: /Manager · Run 1/ }));
+  expect(screen.getByRole("table").textContent).toContain("Manager code");
+  expect(screen.getByRole("button", { name: "Copy run diff" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("combobox", { name: "Run" }));
+  fireEvent.click(screen.getByRole("option", { name: /Worker · Run 1/ }));
+  expect(screen.getByRole("table").textContent).toContain("Worker code");
 });

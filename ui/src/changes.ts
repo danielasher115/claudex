@@ -2,8 +2,12 @@ import { parsePatch, formatPatch, createTwoFilesPatch, type StructuredPatch, typ
 import { textOf, type Item } from "./api";
 
 export interface FilePatch { raw: string; hunks: StructuredPatchHunk[]; binary: boolean }
-export interface ChangedFile { path: string; oldPath?: string; kind: string; patches: FilePatch[]; added: number; removed: number }
-export interface RunChanges { id: string; prompt: string; status: string; files: ChangedFile[]; source: "native" | "recorded" | "workspace"; warning?: string; lastItemId: string }
+export interface ChangeOwner { sessionId: string; name: string; cwd: string }
+export interface ChangedFile { path: string; oldPath?: string; kind: string; patches: FilePatch[]; added: number; removed: number; owner?: ChangeOwner }
+export interface RunChanges { id: string; prompt: string; status: string; files: ChangedFile[]; source: "native" | "recorded" | "workspace"; warning?: string; lastItemId: string; owner?: ChangeOwner; originalRunId?: string; aggregate?: boolean }
+export const FAMILY_CHANGES_ID = "family:all";
+export const familyRunId = (sessionId: string, runId: string) => JSON.stringify([sessionId, runId]);
+export const changedFileId = (file: ChangedFile) => JSON.stringify([file.owner?.sessionId, file.owner?.cwd, file.path]);
 export interface DiffRow { kind: "add" | "delete" | "context" | "hunk" | "meta"; text: string; oldLine: number | null; newLine: number | null }
 
 function cleanPath(path: string, cwd = "") {
@@ -43,7 +47,7 @@ export function diffFiles(raw: string, path = "", kind?: { type?: string; move_p
 }
 
 export function runChanges(items: Item[], cwd = ""): RunChanges[] {
-  const runs = new Map<string, RunChanges & { aggregate?: string; workspace?: string }>();
+  const runs = new Map<string, RunChanges & { nativeDiff?: string; workspace?: string }>();
   let current = "recorded";
   for (const item of items) {
     const record = (item.type === "record" ? item.record : item) as Record<string, unknown>;
@@ -54,7 +58,7 @@ export function runChanges(items: Item[], cwd = ""): RunChanges[] {
     run.lastItemId = item.id;
     if (item.type === "turn") {
       run.status = String(item.status ?? "");
-      if (typeof item.diff === "string") { run.aggregate = item.diff; run.source = "native"; }
+      if (typeof item.diff === "string") { run.nativeDiff = item.diff; run.source = "native"; }
       if (typeof item.workspace_diff === "string") run.workspace = item.workspace_diff;
       if (typeof item.workspace_warning === "string") run.warning = item.workspace_warning;
     }
@@ -69,8 +73,8 @@ export function runChanges(items: Item[], cwd = ""): RunChanges[] {
       }
     }
   }
-  return [...runs.values()].map(({ aggregate, workspace, ...run }) => {
-    const native = aggregate === undefined ? run.files : aggregate.trim() ? diffFiles(aggregate, "", undefined, cwd) : [];
+  return [...runs.values()].map(({ nativeDiff, workspace, ...run }) => {
+    const native = nativeDiff === undefined ? run.files : nativeDiff.trim() ? diffFiles(nativeDiff, "", undefined, cwd) : [];
     if (!workspace?.trim()) return { ...run, files: native };
     const observed = diffFiles(workspace, "", undefined, cwd);
     return { ...run, source: "workspace", files: [...observed, ...native.filter(file => !observed.some(other => other.path === file.path))] };

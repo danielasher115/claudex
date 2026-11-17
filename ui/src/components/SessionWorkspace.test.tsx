@@ -17,7 +17,8 @@ beforeEach(() => {
   localStorage.clear();
   childItems = [{ id: "child-answer", type: "agentMessage", text: "Parser review complete" }];
   items = [{ id: "ask", type: "userMessage", content: [{ type: "text", text: "Fix parser edge cases" }], attachments: [screenshot] }];
-  HTMLElement.prototype.showPopover = vi.fn(); HTMLElement.prototype.hidePopover = vi.fn();
+  HTMLElement.prototype.showPopover = vi.fn(function (this: HTMLElement) { this.style.display = "block"; });
+  HTMLElement.prototype.hidePopover = vi.fn(function (this: HTMLElement) { this.style.display = "none"; });
   HTMLElement.prototype.scrollIntoView = vi.fn();
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
@@ -185,4 +186,44 @@ test("Sources include files from unopened subagents and retain child preview sco
   expect(await screen.findByRole("dialog", { name: "Preview of child.png" })).toBeTruthy();
   expect(fetcher.mock.calls.some(([url]) => String(url) === "/api/sessions/child/sources")).toBe(true);
   expect(fetcher.mock.calls.some(([url]) => String(url) === "/api/sessions/child/view")).toBe(false);
+});
+
+test("parent Changes includes unopened child patches and shares the Sources request", async () => {
+  childItems = [
+    { id: "child-run", type: "turn", turn_id: "child-turn", diff: "--- a/parser.ts\n+++ b/parser.ts\n@@ -1 +1 @@\n-old\n+child fix\n" },
+    { id: "child-report", type: "agentMessage", text: "[Child report](/repo/child-report.md)" },
+  ];
+  await open();
+  const rail = screen.getByRole("complementary", { name: "Session resources" });
+  fireEvent.click(within(rail).getByRole("button", { name: /^Changes/ }));
+  const panel = screen.getByRole("tabpanel", { name: "Changes" });
+  await within(panel).findByRole("table", { name: "Diff for parser.ts" });
+  expect(within(panel).getByRole("combobox", { name: "Run" }).textContent).toContain("All agents");
+  expect(within(panel).getByText("1 file change")).toBeTruthy();
+  expect(within(panel).getByRole("table").textContent).toContain("child fix");
+  expect(within(rail).getByLabelText("1 lines added")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Open a tab" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Sources" }));
+  expect(within(screen.getByRole("tabpanel", { name: "Sources" })).getByRole("button", { name: /^Child report/ })).toBeTruthy();
+  expect(fetcher.mock.calls.filter(([url]) => url === "/api/sessions/child/sources")).toHaveLength(1);
+  expect(fetcher.mock.calls.some(([url]) => url === "/api/sessions/child/view")).toBe(false);
+});
+
+test("parent Changes distinguishes managing and child agent runs for the same file path", async () => {
+  const patch = (value: string) => `--- a/parser.ts\n+++ b/parser.ts\n@@ -1 +1 @@\n-old\n+${value}\n`;
+  items.push({ id: "root-run", type: "turn", turn_id: "root-turn", diff: patch("manager fix") });
+  childItems = [{ id: "child-run", type: "turn", turn_id: "child-turn", diff: patch("worker fix") }];
+  await open();
+  const rail = screen.getByRole("complementary", { name: "Session resources" });
+  fireEvent.click(within(rail).getByRole("button", { name: /^Changes/ }));
+  const panel = screen.getByRole("tabpanel", { name: "Changes" });
+  await within(panel).findByText("2 file changes");
+  fireEvent.click(within(panel).getByRole("button", { name: "Review parser: parser.ts" }));
+  expect(within(panel).getByRole("table").textContent).toContain("worker fix");
+  fireEvent.click(within(panel).getByRole("combobox", { name: "Run" }));
+  fireEvent.click(screen.getByRole("option", { name: /Build parser · Run .*root-turn/ }));
+  expect(within(panel).getByRole("table").textContent).toContain("manager fix");
+  fireEvent.click(within(panel).getByRole("combobox", { name: "Run" }));
+  fireEvent.click(screen.getByRole("option", { name: /Review parser · Run .*child-turn/ }));
+  expect(within(panel).getByRole("table").textContent).toContain("worker fix");
 });

@@ -1,18 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Child, type Page, type Session } from "./api";
+import { api, mergeItems, type Child, type Item, type Page, type Session } from "./api";
 import { collectSources, type SessionSource } from "./sessionSources";
+import { FAMILY_CHANGES_ID, familyRunId, runChanges, type RunChanges } from "./changes";
 import type { SessionResources } from "./components/SessionView";
 
 export type FamilySource = SessionSource & { sessionId: string; sessionName?: string };
 interface Entry {
   sources: Map<string, SessionSource>; revision?: string; fetchedAt: number; cursor: string | null;
+  items: Item[];
+  knownRunsAtFetch?: RunChanges[];
   loaded: boolean; loading: boolean; error: string; source?: string; earlierAt: number;
   latestIds: Set<string>;
   retry: boolean; failedCursor?: string;
 }
 interface Options { rootId: string; children: Child[]; sessions: Session[]; known: Record<string, SessionResources>; enabled: boolean }
 
-export function useFamilySources({ rootId, children, sessions, known, enabled }: Options) {
+function mergeRunWindows(primary: RunChanges[], secondary: RunChanges[]) {
+  // Shared runs anchor the ordered history windows; disjoint history precedes the fresher window.
+  const positions = new Map(primary.map((run, index) => [run.id, index]));
+  const result: RunChanges[] = [];
+  let at = 0;
+  for (const run of secondary) {
+    const index = positions.get(run.id);
+    if (index === undefined) result.push(run);
+    else while (at <= index) result.push(primary[at++]);
+  }
+  return [...result, ...primary.slice(at)];
+}
+
+export function useFamilyResources({ rootId, children, sessions, known, enabled }: Options) {
   const cache = useRef({ rootId, entries: new Map<string, Entry>(), controllers: new Set<AbortController>() });
   if (cache.current.rootId !== rootId) {
     cache.current = { rootId, entries: new Map(), controllers: new Set() };
@@ -44,7 +60,7 @@ export function useFamilySources({ rootId, children, sessions, known, enabled }:
     const requestedEarlier = handledEarlier.current !== earlier;
     if (requestedEarlier) handledEarlier.current = earlier;
     for (const id of ids) if (!state.entries.has(id)) state.entries.set(id, {
-      sources: new Map(), fetchedAt: 0, cursor: null, loaded: false, loading: false, error: "", earlierAt: 0, latestIds: new Set(), retry: false,
+      sources: new Map(), items: [], fetchedAt: 0, cursor: null, loaded: false, loading: false, error: "", earlierAt: 0, latestIds: new Set(), retry: false,
     });
     const fetchPage = async (id: string, revision: string, cursor?: string) => {
       const entry = state.entries.get(id)!;
@@ -56,11 +72,14 @@ export function useFamilySources({ rootId, children, sessions, known, enabled }:
       try {
         const page = await api<Page>(`/api/sessions/${encodeURIComponent(id)}/sources${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, undefined, controller.signal);
         if (controller.signal.aborted) return;
-        if (entry.source && entry.source !== page.source) { entry.sources.clear(); entry.latestIds.clear(); entry.loaded = false; }
+        if (entry.source && entry.source !== page.source) { entry.sources.clear(); entry.items = []; entry.latestIds.clear(); entry.loaded = false; }
         for (const source of collectSources(page.items)) entry.sources.set(source.id, source);
+        entry.items = mergeItems(entry.items, page.items, Boolean(cursor));
+        if (!cursor) entry.knownRunsAtFetch = known[id]?.runs;
         // A latest page without overlap leaves a gap before the saved history cursor.
-        if (cursor || !entry.loaded || !page.items.some(item => entry.latestIds.has(item.id))) entry.cursor = page.next_cursor;
-        if (!cursor) entry.latestIds = new Set(page.items.map(item => item.id));
+        const pageIds = page.items.filter(item => item.type !== "turn").map(item => item.id);
+        if (cursor || !entry.loaded || !pageIds.some(id => entry.latestIds.has(id))) entry.cursor = page.next_cursor;
+        if (!cursor) entry.latestIds = new Set(pageIds);
         entry.source = page.source; entry.loaded = true;
       } catch (error) {
         if (!controller.signal.aborted) { entry.error = error instanceof Error ? error.message : String(error); entry.failedCursor = cursor; }
@@ -109,6 +128,26 @@ export function useFamilySources({ rootId, children, sessions, known, enabled }:
     }
     return result;
   }, [rootId, familyKey, state, version, known, childById, sessionById]);
+  const runs = useMemo(() => {
+    const result: RunChanges[] = [];
+    const latest = new Map<string, RunChanges>();
+    for (const id of [rootId, ...ids]) {
+      const child = childById.get(id), session = known[id]?.session ?? sessionById.get(id);
+      const owner = { sessionId: id, name: child?.name || session?.title || (id === rootId ? "Managing agent" : id), cwd: session?.cwd || child?.cwd || "" };
+      const entry = state.entries.get(id);
+      const cachedRuns = runChanges(entry?.items ?? [], owner.cwd), knownRuns = known[id]?.runs ?? [];
+      const knownIsNewer = known[id]?.runs !== entry?.knownRunsAtFetch;
+      const values = knownIsNewer ? mergeRunWindows(knownRuns, cachedRuns) : mergeRunWindows(cachedRuns, knownRuns);
+      for (const run of values) {
+        const owned = { ...run, id: familyRunId(id, run.id), originalRunId: run.id, owner, files: run.files.map(file => ({ ...file, owner })) };
+        result.push(owned);
+        if (run.files.length) latest.set(id, owned);
+      }
+    }
+    const all: RunChanges = { id: FAMILY_CHANGES_ID, prompt: "All agents", status: "", files: [...latest.values()].flatMap(run => run.files), source: "recorded", lastItemId: "", aggregate: true,
+      warning: ["Latest recorded changes from each agent. Shared files appear separately under each agent and workspace.", ...[...latest.values()].filter(run => run.warning).map(run => `${run.owner!.name}: ${run.warning}`)].join("\n") };
+    return [all, ...result];
+  }, [rootId, familyKey, state, version, known, childById, sessionById]);
   const entries = ids.map(id => state.entries.get(id));
   const loadEarlier = useCallback(() => setEarlier(value => value + 1), []);
   const retry = useCallback(() => {
@@ -116,7 +155,7 @@ export function useFamilySources({ rootId, children, sessions, known, enabled }:
     changed(value => value + 1);
   }, [state]);
   return {
-    sources, loading: enabled && entries.some(entry => !entry || entry.loading || entry.retry || entry.revision === undefined),
+    sources, runs, changes: runs[0].files, loading: enabled && entries.some(entry => !entry || entry.loading || entry.retry || entry.revision === undefined),
     error: [...new Set(entries.map(entry => entry?.error).filter(Boolean))].join("; "),
     hasEarlier: entries.some(entry => Boolean(entry?.cursor)), loadEarlier, retry,
   };

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ArrowDownToLine, ArrowUp, Check, ChevronDown, ChevronRight, ChevronUp, ChevronsDownUp, ChevronsUpDown, Clock3, FileDiff, GitBranch, Info, Pin, Search, Square, SquareTerminal, X } from "lucide-react";
 import { api, mergeItems, project, searchable, type Child, type Delivery, type Item, type Page, type Session } from "../api";
 import { Transcript } from "./Transcript";
@@ -6,7 +7,7 @@ import { Subagents } from "./Subagents";
 import { Loading, Status } from "./shared";
 import { AttachmentFeedback, AttachmentList, AttachmentPicker, useAttachments } from "./Attachments";
 import { Select } from "./Select";
-import { runChanges, type RunChanges } from "../changes";
+import { runChanges, type ChangedFile, type RunChanges } from "../changes";
 import { collectSources, type SessionSource } from "../sessionSources";
 import { ChangeCounts } from "./Diff";
 import { BackgroundShells } from "./BackgroundShells";
@@ -28,10 +29,11 @@ export interface SessionViewProps {
   select?: (id: string) => void; launchChild?: () => void; onResources?: (resources: SessionResources) => void;
   onReviewChanges?: (runId?: string) => void; embedded?: boolean; active?: boolean; keyboardActive?: boolean;
   headerActions?: ReactNode;
+  reviewFiles?: ChangedFile[];
 }
 
 export function SessionView({ id, summary, connected, onChange, pinned: isPinned, togglePin, select, launchChild,
-  onResources, onReviewChanges, embedded = false, active = true, keyboardActive = true, headerActions }: SessionViewProps) {
+  onResources, onReviewChanges, embedded = false, active = true, keyboardActive = true, headerActions, reviewFiles }: SessionViewProps) {
   const [detail, setSession] = useState<Session | null>(summary ?? null);
   const session = detail ? { ...detail, ...summary, messages: detail.messages, active_turn_id: detail.active_turn_id, inherited_context: detail.inherited_context } : summary ?? null;
   const [items, setItems] = useState<Item[]>([]);
@@ -219,6 +221,7 @@ export function SessionView({ id, summary, connected, onChange, pinned: isPinned
   useEffect(() => { onResources?.(resources); }, [onResources, resources]);
   const reviewChanges = (runId?: string) => onReviewChanges ? onReviewChanges(runId) : setReviewRun(runId ?? "");
   const latestChanges = runs.filter(run => run.files.length).at(-1);
+  const latestFiles = reviewFiles ?? latestChanges?.files;
   const runEndings = useMemo(() => new Map(runs.filter(run => run.files.length).map(run => [run.lastItemId, run])), [runs]);
   const visible = deferredFind ? displayItems : displayItems.slice(-limit);
   const pending = session?.messages?.filter(m => !["delivered", "cancelled"].includes(m.status)) ?? [];
@@ -240,18 +243,20 @@ export function SessionView({ id, summary, connected, onChange, pinned: isPinned
       </div>
     </div>{!following && <button className="jump-latest" onClick={jump}><ArrowDownToLine className="size-3.5" />Jump to latest</button>}</div>
     <div className="composer-area"><div className="conversation-column">
-      <BackgroundShells sessionId={id} enabled={active} />
       {pending.length > 0 && <div className="mb-3 space-y-2">{pending.map(m => <div key={m.id} className="pending-message"><div className="flex items-center gap-2 text-[11px] text-faint"><Clock3 className="size-3" /><span>{m.status === "queued" ? m.mode === "steer" ? "Steering queued" : "After current work" : m.status === "sending" ? m.mode === "steer" ? "Steering..." : "Sending..." : m.status === "uncertain" ? "Delivery not confirmed" : "Delivery failed"}</span>{m.status === "queued" && m.mode === "queue" && <button type="button" aria-label="Steer queued message now" title={!session?.can_steer_queued ? "Available after the pending server update" : session?.active_turn_id ? "Send this message into the current turn" : "An active turn is required for steering"} className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-ink hover:bg-hover disabled:opacity-40" disabled={!session?.can_steer_queued || !session?.can_send || !session.active_turn_id || steering !== null || cancelling === m.id} onClick={() => void steerQueued(m.id)}><ArrowUp className="size-3" />{steering === m.id ? "Steering..." : "Steer now"}</button>}{m.status === "queued" && <button aria-label="Remove queued message" className="icon-button !p-0" disabled={cancelling === m.id || steering === m.id} onClick={() => void cancel(m.id)}><X className="size-3.5" /></button>}</div><p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-xs">{m.text}</p>{m.error && <p className="mt-2 text-[11px] text-removed-ink">{m.error}</p>}</div>)}</div>}
       {session?.reason && <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted"><Info className="mt-0.5 size-3 shrink-0" />{session.reason}</p>}
       {sendError && <p role="alert" className="mb-2 text-xs text-removed-ink">{sendError}</p>}
       {receipt && <p role="status" className="mb-2 flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400"><Check className="size-3.5" />{receipt}</p>}
       <AttachmentList files={attachments.files} remove={artifactId => attachments.setFiles(current => current.filter(a => a.id !== artifactId))} />
       <AttachmentFeedback attachments={attachments} />
-      {latestChanges && <div className="mb-3 flex justify-center"><button type="button" className="inline-flex items-center gap-2 rounded-full border border-line bg-panel px-3.5 py-2 text-xs text-muted transition-colors hover:bg-hover" aria-label="Review latest file changes" onClick={() => reviewChanges(latestChanges.id)}><span>{latestChanges.files.length} file{latestChanges.files.length === 1 ? "" : "s"} changed</span><ChangeCounts files={latestChanges.files} /></button></div>}
+      {latestFiles && latestFiles.length > 0 && <div className="mb-3 flex justify-center"><button type="button" className="inline-flex items-center gap-2 rounded-full border border-line bg-panel px-3.5 py-2 text-xs text-muted transition-colors hover:bg-hover" aria-label="Review latest file changes" onClick={() => reviewChanges(reviewFiles ? undefined : latestChanges?.id)}><span>{latestFiles.length} {reviewFiles ? `file change${latestFiles.length === 1 ? "" : "s"}` : `file${latestFiles.length === 1 ? "" : "s"} changed`}</span><ChangeCounts files={latestFiles} /></button></div>}
+      <div className="composer-shell-group">
+      <BackgroundShells sessionId={id} enabled={active} />
       <div className="composer" onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); void attachments.upload(e.dataTransfer.files); }}>
         <AttachmentPicker attachments={attachments} inputRef={fileInput} />
         <textarea ref={textarea} aria-label="Message Codex" value={draft} onChange={e => setDraft(e.target.value)} onPaste={e => { const images = Array.from(e.clipboardData.files); if (images.length) { e.preventDefault(); void attachments.upload(images); } }} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (canSend) void send(); } }} placeholder={session?.can_send ? session.status === "active" ? "Message the agent..." : "Continue the conversation" : "Write a draft for this session..."} rows={1} className="block max-h-60 min-h-8 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent py-1 text-[14.5px] leading-6 outline-none placeholder:text-faint" />
         {session?.status === "active" && !draft.trim() && !attachments.files.length ? <button aria-label="Stop agent from composer" title="Stop this agent" disabled={stopping} onClick={() => void stop()} className="send-button"><Square className="size-3 fill-current" /></button> : <button aria-label={deliveryMode === "steer" ? "Steer Codex" : "Queue message"} title={canSend ? "Send (Enter)" : deliveryMode === "steer" ? "Waiting for the active turn" : "This session is not connected"} disabled={!canSend || (!draft.trim() && !attachments.files.length) || sending || attachments.uploading > 0} onClick={() => void send()} className="send-button">{sending ? <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <ArrowUp className="size-4" />}</button>}
+      </div>
       </div>
       <div className="mt-2 flex items-center gap-2"><ContextWindow usage={contextUsage} /><Select label="Delivery mode" value={mode} onChange={value => { setMode(value); localStorage.setItem("delivery-mode", value); setSendError(""); }} className="!border-transparent !bg-transparent !py-1 !text-[11px]" options={[{ value: "steer", label: "Steer now" }, { value: "queue", label: "After current work" }]} /><p className="min-w-0 flex-1 text-center text-[11px] text-faint">Enter sends · Shift + Enter adds a new line</p><span className="hidden shrink-0 text-[10px] text-faint sm:inline">Draft saved</span></div>
     </div></div>
@@ -260,24 +265,35 @@ export function SessionView({ id, summary, connected, onChange, pinned: isPinned
 
 function ContextWindow({ usage }: { usage: ContextUsage | null }) {
   const tooltipId = useId();
+  const trigger = useRef<HTMLDivElement>(null);
   const tooltip = useRef<HTMLDivElement>(null);
-  const positionTooltip = () => {
-    const bubble = tooltip.current;
-    if (!bubble) return;
-    const icon = bubble.parentElement!.getBoundingClientRect();
-    const center = icon.left + icon.width / 2;
-    const half = bubble.offsetWidth / 2;
-    bubble.style.setProperty("--tooltip-shift", `${Math.max(8 + half - center, Math.min(0, innerWidth - 8 - half - center))}px`);
-  };
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const open = hovered || focused;
   const used = usage?.last?.total_tokens ?? usage?.last?.input_tokens;
   const window = usage?.model_context_window;
   const known = typeof used === "number" && Number.isFinite(used) && used >= 0 && typeof window === "number" && Number.isFinite(window) && window > 0;
   const percent = known ? Math.round(used / window * 100) : null;
   const label = known ? `${used.toLocaleString()} / ${window.toLocaleString()} tokens used` : "Context usage has not been recorded";
-  return <div tabIndex={0} onMouseEnter={positionTooltip} onFocus={positionTooltip} role={known ? "meter" : "img"} aria-label="Context window" aria-valuemin={known ? 0 : undefined} aria-valuemax={known ? 100 : undefined} aria-valuenow={percent === null ? undefined : Math.min(100, percent)} aria-valuetext={known ? label : undefined} aria-describedby={tooltipId} className="group relative flex size-7 shrink-0 items-center justify-center rounded-full text-faint outline-none focus-visible:ring-2 focus-visible:ring-faint">
+  useLayoutEffect(() => {
+    if (!open) return;
+    const position = () => {
+      const bubble = tooltip.current, icon = trigger.current?.getBoundingClientRect();
+      if (!bubble || !icon) return;
+      const center = icon.left + icon.width / 2;
+      const left = Math.max(8, Math.min(center - bubble.offsetWidth / 2, globalThis.innerWidth - bubble.offsetWidth - 8));
+      bubble.style.left = `${left}px`;
+      bubble.style.top = `${Math.max(8, icon.top - bubble.offsetHeight - 12)}px`;
+      bubble.style.setProperty("--tooltip-arrow-x", `${center - left - 1}px`);
+    };
+    position();
+    globalThis.addEventListener("resize", position);
+    globalThis.addEventListener("scroll", position, true);
+    return () => { globalThis.removeEventListener("resize", position); globalThis.removeEventListener("scroll", position, true); };
+  }, [open, label, percent]);
+  return <><div ref={trigger} tabIndex={0} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} role={known ? "meter" : "img"} aria-label="Context window" aria-valuemin={known ? 0 : undefined} aria-valuemax={known ? 100 : undefined} aria-valuenow={percent === null ? undefined : Math.min(100, percent)} aria-valuetext={known ? label : undefined} aria-describedby={tooltipId} className="relative flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-faint outline-none focus-visible:ring-2 focus-visible:ring-faint">
     <svg className="size-[18px] -rotate-90" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="2.5" className="opacity-25" />{percent !== null && <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="2.5" pathLength="100" strokeDasharray={`${Math.min(100, percent)} 100`} strokeLinecap="round" />}</svg>
-    <div ref={tooltip} id={tooltipId} role="tooltip" className="context-tooltip pointer-events-none absolute bottom-full left-1/2 z-50 mb-3 w-64 -translate-x-1/2 rounded-2xl border border-line bg-panel px-4 py-3 text-center text-xs leading-6 text-ink opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus:opacity-100"><p className="text-faint">Context window:</p>{percent !== null && <p className="text-muted">{percent}% full</p>}<p>{label}</p>{known && <p className="mt-1 text-[10px] leading-4 text-faint">Latest recorded native usage</p>}</div>
-  </div>;
+  </div>{createPortal(<div ref={tooltip} id={tooltipId} role="tooltip" className={`context-tooltip pointer-events-none fixed z-50 w-64 rounded-2xl border border-line bg-panel px-4 py-3 text-center text-xs leading-6 text-ink shadow-xl transition-opacity ${open ? "opacity-100" : "opacity-0"}`}><p className="text-faint">Context window:</p>{percent !== null && <p className="text-muted">{percent}% full</p>}<p>{label}</p>{known && <p className="mt-1 text-[10px] leading-4 text-faint">Latest recorded native usage</p>}</div>, document.body)}</>;
 }
 
 function MessageEmpty() { return <div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-line bg-code"><SquareTerminal className="size-6 text-muted" /></div>; }

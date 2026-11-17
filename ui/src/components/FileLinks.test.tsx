@@ -47,3 +47,25 @@ test("web and application navigation links retain their normal behavior", () => 
   expect(isLocalFileLink("../reports/summary.md#L12")).toBe(true);
   expect(isLocalFileLink("javascript:alert(1)")).toBe(false);
 });
+
+test("an open report popup survives repeated chat rerenders and streamed text updates", async () => {
+  const request = vi.fn(async (_url: string, init?: RequestInit) => new Response(JSON.stringify(init?.method === "POST" ? {
+    id: "report", name: "report.md", mime: "text/markdown", kind: "document", content_url: "/api/artifacts/report/content",
+  } : { text: "# Stable report\n\nKeep reading this document.", summary: "", images: [] }), { headers: { "content-type": "application/json" } }));
+  vi.stubGlobal("fetch", request);
+  const message = (text: string) => <FileReferenceScope sessionId="session" itemId="turn:message"><Markdown text={text} /></FileReferenceScope>;
+  const text = "Read the [Full report](/tmp/report.md).";
+  const view = render(message(text));
+  fireEvent.click(screen.getByRole("button", { name: "Full report" }));
+  await screen.findByText("Keep reading this document.");
+  const popup = screen.getByRole("dialog", { name: "Preview of report.md" });
+  fireEvent.click(screen.getByRole("button", { name: "Source" }));
+  view.rerender(message(text));
+  expect(screen.getByRole("dialog", { name: "Preview of report.md" })).toBe(popup);
+  view.rerender(message(text + "\n\nThe agent is checking another file."));
+  expect(screen.getByRole("dialog", { name: "Preview of report.md" })).toBe(popup);
+  expect(screen.getByRole("button", { name: "Source" }).getAttribute("aria-pressed")).toBe("true");
+  expect(request).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});

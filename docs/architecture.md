@@ -49,6 +49,12 @@ Earlier conversation sources load on request through existing history pagination
 objects are reused. File references retain the originating item ID and use the existing server authorization and preview boundary.
 Child source pages use a compact projection and at most two concurrent requests, with refresh throttling for active agents. Sources
 retain the originating session as well as the item ID, so an unopened child's file preview uses that child's evidence boundary.
+The same resource pages carry recorded change evidence. The managing chat defaults to an All agents review of each agent's latest
+changed run, with files grouped by recording agent and workspace. Shared paths remain separate, and overlapping patches are not
+combined into a synthetic Git diff. Individual runs retain their own patch copying and workspace warnings.
+
+Markdown link renderers keep stable component identities across live updates so open file previews retain their state. Context
+tooltips render outside pane clipping, while shell trays appear only when the current runtime inventory confirms running shells.
 
 Tab actions have one owner in the workspace: closing, reopening, selection and ordering update the same tab list for mouse gestures,
 context actions and keyboard shortcuts. Native browser shortcuts are handled when delivered to the page; Alt alternatives remain

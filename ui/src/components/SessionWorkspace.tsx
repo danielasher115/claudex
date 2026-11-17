@@ -6,7 +6,8 @@ import { FileLink, FileReferenceScope } from "./FileLinks";
 import { Loading, Status } from "./shared";
 import { SessionView, type SessionResources, type SessionViewProps } from "./SessionView";
 import { useDropdownPosition } from "./dropdown";
-import { useFamilySources, type FamilySource } from "../useFamilySources";
+import { useFamilyResources, type FamilySource } from "../useFamilyResources";
+import { FAMILY_CHANGES_ID, familyRunId, type ChangedFile } from "../changes";
 
 const Changes = lazy(() => import("./Changes").then(module => ({ default: module.Changes })));
 const FilePreview = lazy(() => import("./FilePreview").then(module => ({ default: module.FilePreview })));
@@ -49,11 +50,12 @@ export function SessionWorkspace({ sessions, ...props }: SessionViewProps & { se
   }, [menu, contextMenu]);
   const root = resources[props.id];
   const active = tabs.find(tab => tab.key === selected);
-  const family = useFamilySources({ rootId: props.id, children: root?.children ?? [], sessions, known: resources,
-    enabled: Boolean(!active && rail || active?.kind === "sources") });
+  const family = useFamilyResources({ rootId: props.id, children: root?.children ?? [], sessions, known: resources,
+    enabled: Boolean(!active && rail || active?.kind === "sources" || active?.kind === "changes") });
   const agentIds = [...new Set(tabs.map(tab => tab.sessionId).filter(id => id !== props.id))];
   const accept = useCallback((value: SessionResources) => setResources(current => current[value.id] === value ? current : { ...current, [value.id]: value }), []);
   const open = (kind: Tab["kind"], sessionId = props.id, runId?: string) => {
+    if (kind === "changes" && sessionId === props.id && runId === undefined) runId = FAMILY_CHANGES_ID;
     const tab = { key: `${kind}:${sessionId}`, kind, sessionId, runId };
     setTabs(current => current.some(value => value.key === tab.key) ? current.map(value => value.key === tab.key && runId !== undefined ? tab : value) : [...current, tab]);
     setSelected(tab.key); setMenu(false); setContextMenu(null); setFocus("dock");
@@ -132,11 +134,11 @@ export function SessionWorkspace({ sessions, ...props }: SessionViewProps & { se
   return <div ref={layout} className={`session-workspace ${active ? "workspace-split" : ""} ${maximized ? "workspace-maximized" : ""} ${rail ? "workspace-rail-open" : ""}`} style={{ "--workspace-split": `${split}%` } as CSSProperties}>
     <section className="workspace-main" aria-label="Parent conversation" onFocusCapture={() => setFocus("main")} onPointerDownCapture={() => setFocus("main")}>
       <div className="workspace-conversation" data-session-pane={props.id}>
-        <SessionView {...props} keyboardActive={focus === "main"} onResources={accept} onReviewChanges={run => open("changes", props.id, run)} select={openAgent}
+        <SessionView {...props} keyboardActive={focus === "main"} onResources={accept} reviewFiles={family.changes} onReviewChanges={run => open("changes", props.id, run ? familyRunId(props.id, run) : FAMILY_CHANGES_ID)} select={openAgent}
           headerActions={<button type="button" className="icon-button" aria-label="Session resources" aria-expanded={!active && rail} title="Session resources" onClick={toggleResources}><PanelRight className="size-4" /></button>} />
       </div>
       <aside className="workspace-resources" aria-label="Session resources">
-        <ResourceCard resources={root} sources={family.sources} session={props.summary} open={kind => open(kind)} addAgent={props.launchChild} preview={source => setPreview({ source, sessionId: source.sessionId })} />
+        <ResourceCard resources={root} changes={family.changes} sources={family.sources} session={props.summary} open={kind => open(kind, props.id, kind === "changes" ? FAMILY_CHANGES_ID : undefined)} addAgent={props.launchChild} preview={source => setPreview({ source, sessionId: source.sessionId })} />
       </aside>
     </section>
     {active && <>
@@ -172,7 +174,7 @@ export function SessionWorkspace({ sessions, ...props }: SessionViewProps & { se
         {tabs.filter(tab => tab.kind !== "agent").map(tab => <div key={tab.key} id={`panel-${tab.key}`} role="tabpanel" aria-labelledby={`tab-${tab.key}`} hidden={selected !== tab.key} className="workspace-tabpanel">
           {tab.kind === "agents" ? <AgentsPanel id={tab.sessionId} resources={resources[tab.sessionId]} sessions={sessions} select={openAgent} />
             : tab.kind === "sources" ? <SourcesPanel resources={resources[tab.sessionId]} family={family} agents={root?.children ?? []} sessionId={tab.sessionId} addSources={() => attachSources(tab.sessionId)} preview={source => setPreview({ source, sessionId: source.sessionId })} />
-              : <Suspense fallback={<div className="p-5"><Loading label="Opening changes" /></div>}><Changes key={tab.runId ?? "latest"} embedded runs={resources[tab.sessionId]?.runs ?? []} initialRun={tab.runId} close={() => closeTab(tab.key)} /></Suspense>}
+              : <Suspense fallback={<div className="p-5"><Loading label="Opening changes" /></div>}><Changes key={tab.runId ?? "latest"} embedded runs={tab.sessionId === props.id ? family.runs : resources[tab.sessionId]?.runs ?? []} initialRun={tab.runId ?? (tab.sessionId === props.id ? FAMILY_CHANGES_ID : undefined)} close={() => closeTab(tab.key)} />{tab.sessionId === props.id && <div className="border-t border-line px-5 py-2 text-xs text-faint">{family.loading && <Loading label="Loading subagent changes" />}{family.error && <p role="status">Some subagent changes could not be loaded: {family.error}<button type="button" className="ml-2 underline" onClick={family.retry}>Retry</button></p>}{family.hasEarlier && <button type="button" disabled={family.loading} onClick={family.loadEarlier}>Load earlier subagent changes</button>}{root?.hasEarlier && <button type="button" className="ml-3" disabled={root.loadingEarlier} onClick={root.loadEarlier}>Load earlier managing agent changes</button>}</div>}</Suspense>}
         </div>)}
       </aside>
     </>}
@@ -191,12 +193,12 @@ function AgentAvatar({ id }: { id: string }) {
   return <Flower2 aria-hidden className="agent-avatar size-5 shrink-0" style={{ color, fill: color }} />;
 }
 
-function ResourceCard({ resources, sources, session, open, addAgent, preview }: { resources?: SessionResources; sources: FamilySource[]; session?: Session; open: (kind: "changes" | "agents" | "sources") => void; addAgent?: () => void; preview: (source: FamilySource) => void }) {
-  const agents = resources?.children ?? [], latest = resources?.runs.filter(run => run.files.length).at(-1);
+function ResourceCard({ resources, changes, sources, session, open, addAgent, preview }: { resources?: SessionResources; changes: ChangedFile[]; sources: FamilySource[]; session?: Session; open: (kind: "changes" | "agents" | "sources") => void; addAgent?: () => void; preview: (source: FamilySource) => void }) {
+  const agents = resources?.children ?? [];
   const count = agents.filter(working).length;
   return <div className="resource-card">
     <div className="resource-project" title={resources?.session?.cwd || session?.cwd}>{project(resources?.session?.cwd || session?.cwd || "")}</div>
-    <button type="button" className="resource-changes" onClick={() => open("changes")}><FileDiff className="size-3.5" /><span>Changes</span>{latest && <ChangeCounts files={latest.files} />}<ChevronRight className="ml-auto size-3.5 text-faint" /></button>
+    <button type="button" className="resource-changes" onClick={() => open("changes")}><FileDiff className="size-3.5" /><span>Changes</span>{changes.length > 0 && <ChangeCounts files={changes} />}<ChevronRight className="ml-auto size-3.5 text-faint" /></button>
     <div className="resource-section"><div className="resource-heading"><button type="button" onClick={() => open("agents")}>Subagents</button>{addAgent && <button type="button" className="icon-button" aria-label="Launch subagent" title="Launch subagent" onClick={addAgent}><Plus className="size-3.5" /></button>}</div>
       <button type="button" className="resource-agent-summary" aria-label={`Open subagents (${agents.length})`} onClick={() => open("agents")}><span className="resource-avatars">{agents.slice(0, 4).map(agent => <AgentAvatar key={agent.thread_id} id={agent.thread_id} />)}</span><span>{count ? `${count} working` : agents.length ? `${agents.length} done` : "No subagents"}</span>{count > 0 && agents.length > count && <span className="text-faint">{agents.length - count} done</span>}</button>
     </div>
@@ -216,7 +218,7 @@ function SourceRow({ source, sessionId, preview, compact = false }: { source: Fa
     : <FileReferenceScope sessionId={sessionId} itemId={source.itemId}><FileLink href={source.href || ""} title={source.name}>{body}</FileLink></FileReferenceScope>}</div>;
 }
 
-function SourcesPanel({ resources, family, agents, sessionId, addSources, preview }: { resources?: SessionResources; family: ReturnType<typeof useFamilySources>; agents: Child[]; sessionId: string; addSources: () => void; preview: (source: FamilySource) => void }) {
+function SourcesPanel({ resources, family, agents, sessionId, addSources, preview }: { resources?: SessionResources; family: ReturnType<typeof useFamilyResources>; agents: Child[]; sessionId: string; addSources: () => void; preview: (source: FamilySource) => void }) {
   const ids = new Set([sessionId]);
   for (const agent of agents) {
     let parent = agent.parent_id;
